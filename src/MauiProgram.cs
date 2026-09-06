@@ -14,7 +14,10 @@ public static class MauiProgram
     {
         try
         {
+            Checkpoint("start");
+
             SQLitePCL.Batteries_V2.Init();
+            Checkpoint("after SQLitePCL.Batteries_V2.Init");
 
             var builder = MauiApp.CreateBuilder();
             builder
@@ -23,13 +26,16 @@ public static class MauiProgram
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 });
+            Checkpoint("after CreateBuilder/UseMauiApp/ConfigureFonts");
 
             builder.Services.AddMauiBlazorWebView();
+            Checkpoint("after AddMauiBlazorWebView");
 
             var dbPath = Path.Combine(FileSystem.AppDataDirectory, "makeready.db");
             builder.Services.AddDbContextFactory<AppDbContext>(options =>
                 options.UseSqlite($"Data Source={dbPath}")
                     .UseModel(AppDbContextModel.Instance));
+            Checkpoint("after AddDbContextFactory");
 
             builder.Services.AddScoped<FirearmService>();
             builder.Services.AddScoped<HitFactorService>();
@@ -37,6 +43,7 @@ public static class MauiProgram
             builder.Services.AddScoped<ExportService>();
             builder.Services.AddScoped<AmmoService>();
             builder.Services.AddSingleton<AlertService>();
+            Checkpoint("after service registrations");
 
 #if DEBUG
             builder.Services.AddBlazorWebViewDeveloperTools();
@@ -44,12 +51,17 @@ public static class MauiProgram
 #endif
 
             var app = builder.Build();
+            Checkpoint("after builder.Build()");
 
             // Create DB and apply any additive schema changes
             using var scope = app.Services.CreateScope();
+            Checkpoint("after CreateScope");
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Checkpoint("after GetRequiredService<AppDbContext>");
             db.Database.EnsureCreated();
+            Checkpoint("after EnsureCreated");
             ApplySchemaUpdates(db);
+            Checkpoint("after ApplySchemaUpdates");
 
             return app;
         }
@@ -60,9 +72,26 @@ public static class MauiProgram
         }
     }
 
-    // Diagnostic only: on iOS, the native crash report doesn't retain the managed
-    // exception. Persist it to Documents (exposed via UIFileSharingEnabled) so it
-    // can be pulled off-device with afcclient --documents.
+    // Diagnostic only: iOS's watchdog SIGKILLs a hung launch with no exception
+    // and no managed stack trace, and a native crash log doesn't retain the
+    // managed exception either. Persist progress/exceptions to Documents
+    // (exposed via UIFileSharingEnabled) so they can be pulled off-device
+    // with afcclient --documents.
+    static void Checkpoint(string name)
+    {
+        try
+        {
+            var docs = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+            var path = Path.Combine(docs, "startup-progress.txt");
+            var line = $"{DateTime.UtcNow:O} {name}\n";
+            if (name == "start")
+                File.WriteAllText(path, line);
+            else
+                File.AppendAllText(path, line);
+        }
+        catch { /* best effort */ }
+    }
+
     static void TryWriteStartupCrashLog(Exception ex)
     {
         try
