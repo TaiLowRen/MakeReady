@@ -35,23 +35,6 @@ jobs:
         working-directory: src
         run: dotnet workload install maui --version 9.0.302.0
 
-      - name: Generate EF Core compiled model (one-off, to be committed)
-        working-directory: src
-        run: |
-          dotnet tool install --global dotnet-ef --version 9.0.6
-          dotnet ef dbcontext optimize \
-            --startup-project MakeReady.csproj \
-            --project MakeReady.csproj \
-            --framework net9.0-ios \
-            --output-dir Data/CompiledModels \
-            --namespace MakeReady.Data.CompiledModels
-          find Data/CompiledModels -type f
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ef-compiled-model
-          path: src/Data/CompiledModels
-
       - name: Build unsigned iOS app bundle
         working-directory: src
         run: >

@@ -1,4 +1,5 @@
 using MakeReady.Data;
+using MakeReady.Data.CompiledModels;
 using MakeReady.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,8 @@ public static class MauiProgram
 
             var dbPath = Path.Combine(FileSystem.AppDataDirectory, "makeready.db");
             builder.Services.AddDbContextFactory<AppDbContext>(options =>
-                options.UseSqlite($"Data Source={dbPath}"));
+                options.UseSqlite($"Data Source={dbPath}")
+                    .UseModel(AppDbContextModel.Instance));
 
             builder.Services.AddScoped<FirearmService>();
             builder.Services.AddScoped<HitFactorService>();
