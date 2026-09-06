@@ -1,0 +1,72 @@
+name: iOS minimal test app (unsigned)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/setup-dotnet@v4
+        id: setup-dotnet
+        with:
+          dotnet-version: '9.0.302'
+
+      - name: Pin SDK version (runner also ships a newer preinstalled SDK)
+        run: |
+          cat > global.json <<EOF
+          {
+            "sdk": {
+              "version": "${{ steps.setup-dotnet.outputs.dotnet-version }}",
+              "rollForward": "latestFeature"
+            }
+          }
+          EOF
+          cat global.json
+          dotnet --version
+
+      - name: Install workloads pinned to the workload set matching Xcode 16.4
+        run: dotnet workload install maui --version 9.0.302.0
+
+      - name: Scaffold a blank MAUI app
+        run: |
+          dotnet new install Microsoft.Maui.Templates --version 9.0.*
+          dotnet new maui -n MinimalTest -o minimal-test
+
+      - name: Restrict to iOS only
+        working-directory: minimal-test
+        run: |
+          sed -i '' 's#<TargetFrameworks>.*</TargetFrameworks>#<TargetFrameworks>net9.0-ios</TargetFrameworks>#' MinimalTest.csproj
+          cat MinimalTest.csproj
+
+      - name: Publish unsigned iOS app bundle
+        working-directory: minimal-test
+        run: >
+          dotnet publish MinimalTest.csproj
+          -f net9.0-ios
+          -c Release
+          -r ios-arm64
+          --self-contained
+          -p:CodesignKey=-
+          -p:CodesignProvision=
+          -p:BuildIpa=false
+          -p:ArchiveOnBuild=false
+
+      - name: Find .app bundle
+        working-directory: minimal-test
+        run: find bin/Release/net9.0-ios -maxdepth 3 -name "*.app" -print
+
+      - name: Package into IPA
+        working-directory: minimal-test
+        run: |
+          APP_PATH=$(find bin/Release/net9.0-ios -maxdepth 3 -name "*.app" | head -1)
+          echo "App bundle: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r MinimalTest-unsigned.ipa Payload
+          mv MinimalTest-unsigned.ipa "$GITHUB_WORKSPACE/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MinimalTest-unsigned-ipa
+          path: MinimalTest-unsigned.ipa
