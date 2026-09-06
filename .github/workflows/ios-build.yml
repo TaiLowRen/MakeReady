@@ -16,8 +16,9 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Install MAUI iOS workload
-        run: dotnet workload install maui-ios
+      - name: Restore MAUI workloads
+        working-directory: src
+        run: dotnet workload restore MakeReady.csproj
 
       - name: Build unsigned iOS app bundle
         working-directory: src
