@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>MakeReady</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="../../src/Data/*.cs" LinkBase="Data" />
+        <Compile Include="../../src/Models/*.cs" LinkBase="Models" />
+        <Compile Include="../../src/Services/*.cs" LinkBase="Services" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <RazorComponent Include="../../src/Components/Layout/MainLayout.razor" Link="Components/Layout/MainLayout.razor" />
+        <RazorComponent Include="../../src/Components/Pages/*.razor" Exclude="../../src/Components/Pages/Export.razor" LinkBase="Components/Pages" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.6" />
+    </ItemGroup>
+
+</Project>
