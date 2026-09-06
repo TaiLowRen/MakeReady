@@ -11,43 +11,65 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
-        SQLitePCL.Batteries_V2.Init();
+        try
+        {
+            SQLitePCL.Batteries_V2.Init();
 
-        var builder = MauiApp.CreateBuilder();
-        builder
-            .UseMauiApp<App>()
-            .ConfigureFonts(fonts =>
-            {
-                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-            });
+            var builder = MauiApp.CreateBuilder();
+            builder
+                .UseMauiApp<App>()
+                .ConfigureFonts(fonts =>
+                {
+                    fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+                });
 
-        builder.Services.AddMauiBlazorWebView();
+            builder.Services.AddMauiBlazorWebView();
 
-        var dbPath = Path.Combine(FileSystem.AppDataDirectory, "makeready.db");
-        builder.Services.AddDbContextFactory<AppDbContext>(options =>
-            options.UseSqlite($"Data Source={dbPath}"));
+            var dbPath = Path.Combine(FileSystem.AppDataDirectory, "makeready.db");
+            builder.Services.AddDbContextFactory<AppDbContext>(options =>
+                options.UseSqlite($"Data Source={dbPath}"));
 
-        builder.Services.AddScoped<FirearmService>();
-        builder.Services.AddScoped<HitFactorService>();
-        builder.Services.AddScoped<MaintenanceService>();
-        builder.Services.AddScoped<ExportService>();
-        builder.Services.AddScoped<AmmoService>();
-        builder.Services.AddSingleton<AlertService>();
+            builder.Services.AddScoped<FirearmService>();
+            builder.Services.AddScoped<HitFactorService>();
+            builder.Services.AddScoped<MaintenanceService>();
+            builder.Services.AddScoped<ExportService>();
+            builder.Services.AddScoped<AmmoService>();
+            builder.Services.AddSingleton<AlertService>();
 
 #if DEBUG
-        builder.Services.AddBlazorWebViewDeveloperTools();
-        builder.Logging.AddDebug();
+            builder.Services.AddBlazorWebViewDeveloperTools();
+            builder.Logging.AddDebug();
 #endif
 
-        var app = builder.Build();
+            var app = builder.Build();
 
-        // Create DB and apply any additive schema changes
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.EnsureCreated();
-        ApplySchemaUpdates(db);
+            // Create DB and apply any additive schema changes
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Database.EnsureCreated();
+            ApplySchemaUpdates(db);
 
-        return app;
+            return app;
+        }
+        catch (Exception ex)
+        {
+            TryWriteStartupCrashLog(ex);
+            throw;
+        }
+    }
+
+    // Diagnostic only: on iOS, the native crash report doesn't retain the managed
+    // exception. Persist it to Documents (exposed via UIFileSharingEnabled) so it
+    // can be pulled off-device with afcclient --documents.
+    static void TryWriteStartupCrashLog(Exception ex)
+    {
+        try
+        {
+            var docs = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+            var path = Path.Combine(docs, "startup-crash.txt");
+            File.WriteAllText(path, $"{DateTime.UtcNow:O}\n{ex}");
+        }
+        catch { /* best effort */ }
     }
 
     // Additive-only schema updates for existing databases.
