@@ -1,0 +1,397 @@
+@page "/maintenance/{FirearmId:int}"
+@inject MaintenanceService Svc
+@inject FirearmService FireSvc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo("/maintenance")'>
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div style="flex:1; min-width:0;">
+        <div class="header-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            @(firearm?.DisplayName ?? "Loading...")
+        </div>
+        @if (firearm != null)
+        {
+            <div class="header-subtitle">@firearm.CategoryLabel &middot; Maintenance</div>
+        }
+    </div>
+    @if (firearm != null)
+    {
+        <button class="btn-mr-primary" style="padding:8px 14px; font-size:0.8rem; width:auto;"
+                @onclick='() => Nav.NavigateTo($"/maintenance/{FirearmId}/log")'>
+            <i class="bi bi-plus-lg me-1"></i>Log Cleaning
+        </button>
+    }
+</div>
+
+@if (firearm == null)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else
+{
+    var alert = Svc.GetFirearmAlert(firearm);
+
+    <div class="page-body">
+        <!-- Status banner -->
+        @if (alert.Status != MaintenanceStatusLevel.OK)
+        {
+            <div class="maint-alert-banner @(alert.Status == MaintenanceStatusLevel.Overdue ? "banner-overdue" : "banner-soon")">
+                <i class="bi @(alert.Status == MaintenanceStatusLevel.Overdue ? "bi-exclamation-triangle-fill" : "bi-clock-fill") me-2"></i>
+                <div>
+                    <div style="font-weight:700;">@(alert.Status == MaintenanceStatusLevel.Overdue ? "Cleaning Overdue" : "Cleaning Due Soon")</div>
+                    <div style="font-size:0.8rem; opacity:0.9;">@alert.Message</div>
+                </div>
+            </div>
+        }
+
+        <!-- Quick stats -->
+        <div class="d-flex gap-2 flex-wrap mb-4">
+            <span class="stat-badge">
+                <i class="bi bi-calendar3-event"></i>
+                <span>Last cleaned</span>
+                <span class="stat-val">
+                    @(alert.LastCleaned.HasValue ? alert.LastCleaned.Value.ToLocalTime().ToString("MMM d") : "Never")
+                </span>
+            </span>
+            <span class="stat-badge">
+                <i class="bi bi-journals"></i>
+                <span>Sessions since clean</span>
+                <span class="stat-val" style="color:@(alert.SessionsSinceLastClean > 5 ? "var(--mr-red)" : "var(--mr-accent)")">
+                    @alert.SessionsSinceLastClean
+                </span>
+            </span>
+            <span class="stat-badge">
+                <i class="bi bi-tools"></i>
+                <span>Log entries</span>
+                <span class="stat-val">@firearm.MaintenanceLogs.Count</span>
+            </span>
+        </div>
+
+        <!-- Tabs -->
+        <div class="detail-tabs">
+            <button class="detail-tab @(tab == 0 ? "active" : "")" @onclick='() => tab = 0'>Schedule</button>
+            <button class="detail-tab @(tab == 1 ? "active" : "")" @onclick='() => tab = 1'>Parts</button>
+            <button class="detail-tab @(tab == 2 ? "active" : "")" @onclick='() => tab = 2'>History</button>
+        </div>
+
+        <!-- Schedule tab -->
+        @if (tab == 0)
+        {
+            <div class="section-label">Firearm Category</div>
+            <div class="mr-card mb-4">
+                <div class="mode-tabs">
+                    @foreach (var cat in new[] { FirearmCategory.Handgun, FirearmCategory.LongGun, FirearmCategory.Other })
+                    {
+                        <button class="mode-tab @(firearm.Category == cat ? "active" : "")"
+                                @onclick="() => SetCategory(cat)">
+                            @(cat == FirearmCategory.Handgun ? "Handgun" : cat == FirearmCategory.LongGun ? "Long Gun" : "Other")
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="section-label">Cleaning Schedule</div>
+            @if (firearm.Schedule == null)
+            {
+                <div class="mr-card" style="margin-bottom:16px; border-style:dashed; border-color:var(--mr-accent);">
+                    <div style="font-size:0.875rem; color:var(--mr-text-muted); margin-bottom:16px;">
+                        No schedule set. The app will alert you after 90 days or 5 sessions without cleaning.
+                    </div>
+                    <button class="btn-mr-primary" @onclick="CreateSchedule">
+                        <i class="bi bi-calendar-plus me-2"></i>Set a Schedule
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="mr-card mb-4">
+                    <div class="mb-3">
+                        <label class="form-label">Clean every</label>
+                        <div class="d-flex align-items-center gap-3">
+                            <input type="number" class="form-control" style="max-width:100px;"
+                                   @bind="schedInterval" @bind:event="oninput" min="1" max="365" />
+                            <span style="color:var(--mr-text-muted);">days</span>
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--mr-text-muted); margin-top:6px;">
+                            Common: 30 (competitive use), 90 (storage/light use)
+                        </div>
+                    </div>
+                    @if (alert.DaysUntilDue.HasValue)
+                    {
+                        <div style="font-size:0.85rem; margin-bottom:12px; color:@(alert.Status == MaintenanceStatusLevel.OK ? "var(--mr-green)" : alert.Status == MaintenanceStatusLevel.DueSoon ? "var(--mr-accent)" : "var(--mr-red)")">
+                            <i class="bi bi-calendar-event me-1"></i>
+                            @(alert.DaysUntilDue <= 0
+                                ? $"Overdue by {-alert.DaysUntilDue} days"
+                                : $"Next cleaning due in {alert.DaysUntilDue} days")
+                        </div>
+                    }
+                    <div class="d-flex gap-2">
+                        <button class="btn-mr-primary" style="flex:1;" @onclick="SaveSchedule">Save</button>
+                        <button class="btn-mr-danger" @onclick="RemoveSchedule">Remove Schedule</button>
+                    </div>
+                </div>
+
+                <div class="section-label">Notifications</div>
+                <div class="mr-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div style="font-weight:600;">Alert 15 days before due</div>
+                            <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-top:2px;">
+                                In-app alerts shown on Maintenance page and home screen
+                            </div>
+                        </div>
+                        <div style="position:relative;">
+                            <input type="checkbox" @bind="schedNotifications"
+                                   style="width:24px; height:24px; accent-color:var(--mr-accent); cursor:pointer;" />
+                        </div>
+                    </div>
+                    @if (schedNotifications != firearm.Schedule.NotificationsEnabled)
+                    {
+                        <button class="btn-mr-primary mt-3" @onclick="SaveSchedule">Save</button>
+                    }
+                </div>
+            }
+        }
+
+        <!-- Parts tab -->
+        @if (tab == 1)
+        {
+            <div class="section-label">Tracked Components</div>
+            @foreach (var part in firearm.Parts)
+            {
+                var pa = Svc.GetPartAlert(firearm, part);
+                <div class="mr-card" style="margin-bottom:8px;">
+                    <div class="d-flex align-items-center gap-2">
+                        <div style="width:8px; height:8px; border-radius:50%; background:@StatusColor(pa.Status); flex-shrink:0;"></div>
+                        <div style="flex:1;">
+                            <div style="font-weight:600;">@part.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(part.Brand))
+                            {
+                                <div style="font-size:0.72rem; color:var(--mr-accent); margin-top:1px;">@part.Brand</div>
+                            }
+                            <div style="font-size:0.75rem; color:var(--mr-text-muted);">@pa.Message</div>
+                        </div>
+                        @if (part.IntervalDays.HasValue)
+                        {
+                            <span class="stat-badge" style="font-size:0.7rem;">every @part.IntervalDays days</span>
+                        }
+                        <button class="btn-icon danger" @onclick="() => DeletePart(part.Id)">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    </div>
+                    @if (editPartId == part.Id)
+                    {
+                        <hr class="mr-divider" />
+                        <div class="mb-2">
+                            <label class="form-label">Brand / Manufacturer <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                            <input class="form-control" @bind="editPartBrand" placeholder="e.g. Wolff, Geissele, LWD" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Cleaning interval (days) — leave blank for none</label>
+                            <input type="number" class="form-control" @bind="editPartInterval" min="1" max="730" placeholder="e.g. 30" />
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn-mr-primary" style="flex:1;" @onclick="() => SavePartInterval(part)">Save</button>
+                            <button class="btn-mr-secondary" @onclick="() => editPartId = null">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button style="background:none; border:none; color:var(--mr-text-muted); font-size:0.75rem; padding:4px 0 0; cursor:pointer;"
+                                @onclick="() => StartEditPart(part)">
+                            <i class="bi bi-pencil me-1"></i>Edit brand / interval
+                        </button>
+                    }
+                </div>
+            }
+
+            <!-- Add from defaults -->
+            @if (DefaultSuggestions.Count > 0)
+            {
+                <div class="section-label" style="margin-top:16px;">Add Default Parts</div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach (var s in DefaultSuggestions)
+                    {
+                        <button class="tag tag-acc" style="cursor:pointer; padding:6px 12px; font-size:0.78rem;"
+                                @onclick="() => AddDefaultPart(s)">
+                            <i class="bi bi-plus me-1"></i>@s
+                        </button>
+                    }
+                </div>
+            }
+
+            <!-- Custom part -->
+            <div class="mr-card" style="border-style:dashed; border-color:var(--mr-accent);">
+                <div class="section-label" style="margin-top:0;">Add Custom Part</div>
+                <input class="form-control mb-3" @bind="newPartName" placeholder="e.g. Optic battery, Suppressor baffles" />
+                <button class="btn-mr-primary" @onclick="AddCustomPart" disabled="@(string.IsNullOrWhiteSpace(newPartName))">
+                    <i class="bi bi-plus-lg me-2"></i>Add
+                </button>
+            </div>
+        }
+
+        <!-- History tab -->
+        @if (tab == 2)
+        {
+            <div class="section-label">Cleaning History</div>
+            @if (firearm.MaintenanceLogs.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-journal-x"></i>
+                    <p>No cleanings logged yet.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var log in firearm.MaintenanceLogs.OrderByDescending(l => l.Date))
+                {
+                    <div class="mr-card" style="margin-bottom:8px;">
+                        <div class="d-flex align-items-start justify-content-between">
+                            <div style="flex:1;">
+                                <div style="font-weight:700;">@log.Date.ToLocalTime().ToString("MMM d, yyyy")</div>
+                                @if (!string.IsNullOrWhiteSpace(log.Notes))
+                                {
+                                    <div style="font-size:0.82rem; color:var(--mr-text-muted); margin-top:2px;">@log.Notes</div>
+                                }
+                                @if (log.CleanedParts.Count > 0)
+                                {
+                                    <div style="font-size:0.75rem; color:var(--mr-text-muted); margin-top:6px;">
+                                        <i class="bi bi-tools me-1"></i>
+                                        @string.Join(", ", log.CleanedParts.Select(p => p.PartName))
+                                    </div>
+                                }
+                            </div>
+                            <button class="btn-icon danger" @onclick="() => DeleteLog(log.Id)">
+                                <i class="bi bi-trash3" style="font-size:1rem;"></i>
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int FirearmId { get; set; }
+
+    Firearm? firearm;
+    int tab = 0;
+
+    int schedInterval = 90;
+    bool schedNotifications = true;
+    string newPartName = "";
+    int? editPartId;
+    int? editPartInterval;
+    string editPartBrand = "";
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    async Task Reload()
+    {
+        firearm = await Svc.GetFirearmDetailAsync(FirearmId);
+        if (firearm?.Schedule != null)
+        {
+            schedInterval      = firearm.Schedule.IntervalDays;
+            schedNotifications = firearm.Schedule.NotificationsEnabled;
+        }
+        StateHasChanged();
+    }
+
+    async Task SetCategory(FirearmCategory cat)
+    {
+        if (firearm == null) return;
+        firearm.Category = cat;
+        await FireSvc.SaveFirearmAsync(firearm);
+        await Reload();
+    }
+
+    async Task CreateSchedule()
+    {
+        await Svc.SaveScheduleAsync(new MaintenanceSchedule
+        {
+            FirearmId            = FirearmId,
+            IntervalDays         = 90,
+            NotificationsEnabled = true
+        });
+        await Reload();
+    }
+
+    async Task SaveSchedule()
+    {
+        if (firearm?.Schedule == null) return;
+        firearm.Schedule.IntervalDays         = Math.Max(1, schedInterval);
+        firearm.Schedule.NotificationsEnabled = schedNotifications;
+        await Svc.SaveScheduleAsync(firearm.Schedule);
+        await Reload();
+    }
+
+    async Task RemoveSchedule()
+    {
+        await Svc.DeleteScheduleAsync(FirearmId);
+        await Reload();
+    }
+
+    void StartEditPart(MaintenancePart part)
+    {
+        editPartId       = part.Id;
+        editPartInterval = part.IntervalDays;
+        editPartBrand    = part.Brand ?? "";
+    }
+
+    async Task SavePartInterval(MaintenancePart part)
+    {
+        part.IntervalDays = editPartInterval;
+        part.Brand        = string.IsNullOrWhiteSpace(editPartBrand) ? null : editPartBrand.Trim();
+        await Svc.SavePartAsync(part);
+        editPartId = null;
+        await Reload();
+    }
+
+    async Task AddDefaultPart(string name)
+    {
+        await Svc.SavePartAsync(new MaintenancePart { FirearmId = FirearmId, Name = name });
+        await Reload();
+    }
+
+    async Task AddCustomPart()
+    {
+        if (string.IsNullOrWhiteSpace(newPartName)) return;
+        await Svc.SavePartAsync(new MaintenancePart { FirearmId = FirearmId, Name = newPartName.Trim() });
+        newPartName = "";
+        await Reload();
+    }
+
+    async Task DeletePart(int id)
+    {
+        await Svc.DeletePartAsync(id);
+        await Reload();
+    }
+
+    async Task DeleteLog(int id)
+    {
+        await Svc.DeleteLogAsync(id);
+        await Reload();
+    }
+
+    List<string> DefaultSuggestions
+    {
+        get
+        {
+            if (firearm == null) return new();
+            var defaults = firearm.Category == FirearmCategory.Handgun ? DefaultParts.Handgun : DefaultParts.LongGun;
+            var existing = firearm.Parts.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return defaults.Where(d => !existing.Contains(d)).ToList();
+        }
+    }
+
+    static string StatusColor(MaintenanceStatusLevel s) => s switch
+    {
+        MaintenanceStatusLevel.Overdue => "var(--mr-red)",
+        MaintenanceStatusLevel.DueSoon => "var(--mr-accent)",
+        _                              => "var(--mr-green)"
+    };
+}

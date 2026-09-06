@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+.vs/
+.DS_Store
+
+node_modules/
+.expo/
+
+*.ipa
+*.app

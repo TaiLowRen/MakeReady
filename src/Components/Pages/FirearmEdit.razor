@@ -1,0 +1,124 @@
+@page "/firearm/add"
+@page "/firearm/{Id:int}/edit"
+@inject FirearmService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick="GoBack">
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div class="header-title">@(isNew ? "Add Firearm" : "Edit Firearm")</div>
+    @if (!isNew)
+    {
+        <button class="btn-icon danger" @onclick="DeleteFirearm" title="Delete">
+            <i class="bi bi-trash3"></i>
+        </button>
+    }
+</div>
+
+<div class="page-body">
+    <EditForm Model="firearm" OnValidSubmit="Save">
+        <DataAnnotationsValidator />
+
+        <div class="mb-4">
+            <label class="form-label">Make</label>
+            <InputText class="form-control" @bind-Value="firearm.Make" placeholder="e.g. Glock, Sig Sauer, Smith & Wesson" />
+            <ValidationMessage For="() => firearm.Make" />
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label">Model</label>
+            <InputText class="form-control" @bind-Value="firearm.Model" placeholder="e.g. 17, P320, M&P9" />
+            <ValidationMessage For="() => firearm.Model" />
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label">Notes <span style="font-weight:400; text-transform:none; font-size:0.7rem; color:var(--mr-text-muted);">(optional)</span></label>
+            <InputTextArea class="form-control" @bind-Value="firearm.Notes" placeholder="Caliber, serial number, purchase date..." rows="3" />
+        </div>
+
+        @if (errorMsg != null)
+        {
+            <div style="background:rgba(248,81,73,0.1); border:1px solid var(--mr-red); border-radius:10px; padding:12px; margin-bottom:16px; color:var(--mr-red); font-size:0.875rem;">
+                @errorMsg
+            </div>
+        }
+
+        <div class="d-flex flex-column gap-3">
+            <button type="submit" class="btn-mr-primary" disabled="@saving">
+                @if (saving)
+                {
+                    <span>Saving...</span>
+                }
+                else
+                {
+                    <i class="bi bi-check-lg me-2"></i><span>@(isNew ? "Add Firearm" : "Save Changes")</span>
+                }
+            </button>
+            <button type="button" class="btn-mr-secondary" @onclick="GoBack">Cancel</button>
+        </div>
+    </EditForm>
+</div>
+
+@if (showDeleteConfirm)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500; display:flex; align-items:flex-end;">
+        <div style="background:var(--mr-surface); border-radius:16px 16px 0 0; padding:24px 20px; width:100%; border-top:1px solid var(--mr-border);">
+            <div style="font-size:1rem; font-weight:700; margin-bottom:8px;">Delete Firearm?</div>
+            <div style="font-size:0.875rem; color:var(--mr-text-muted); margin-bottom:24px;">
+                This will permanently delete @firearm.DisplayName and all its sessions, magazines, and modifications.
+            </div>
+            <div class="d-flex flex-column gap-3">
+                <button class="btn-mr-danger" style="width:100%; padding:14px;" @onclick="ConfirmDelete">
+                    <i class="bi bi-trash3 me-2"></i>Yes, Delete
+                </button>
+                <button class="btn-mr-secondary" @onclick="() => showDeleteConfirm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    Firearm firearm = new();
+    bool isNew = true;
+    bool saving = false;
+    bool showDeleteConfirm = false;
+    string? errorMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            isNew = false;
+            var loaded = await Svc.GetFirearmAsync(Id.Value);
+            if (loaded != null)
+                firearm = loaded;
+        }
+    }
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(firearm.Make) && string.IsNullOrWhiteSpace(firearm.Model))
+        {
+            errorMsg = "Enter at least a make or model.";
+            return;
+        }
+        saving = true;
+        errorMsg = null;
+        var saved = await Svc.SaveFirearmAsync(firearm);
+        Nav.NavigateTo($"/firearm/{saved.Id}");
+    }
+
+    void GoBack() => Nav.NavigateTo(isNew ? "/" : $"/firearm/{Id}");
+
+    void DeleteFirearm() => showDeleteConfirm = true;
+
+    async Task ConfirmDelete()
+    {
+        await Svc.DeleteFirearmAsync(firearm.Id);
+        Nav.NavigateTo("/");
+    }
+}

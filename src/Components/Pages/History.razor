@@ -1,0 +1,83 @@
+@page "/history"
+@inject FirearmService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <div class="header-title">All Sessions</div>
+</div>
+
+<div class="page-body">
+    @if (loading)
+    {
+        <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+    }
+    else if (firearms.Count == 0 || firearms.All(f => f.Sessions.Count == 0))
+    {
+        <div class="empty-state" style="margin-top:48px;">
+            <i class="bi bi-clock-history"></i>
+            <p style="font-size:1rem; font-weight:600; color:var(--mr-text); margin-bottom:8px;">No sessions yet</p>
+            <p>Start tracking rounds to see your history here.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var gun in firearms.Where(f => f.Sessions.Count > 0))
+        {
+            <div style="margin-bottom:24px;">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="section-label" style="margin:0;">@gun.DisplayName</div>
+                    <span class="stat-badge">
+                        <span class="stat-val">@gun.TotalRoundsFired.ToString("N0")</span>
+                        <span>total</span>
+                    </span>
+                </div>
+                <div class="mr-card" style="padding:8px 16px;">
+                    @foreach (var session in gun.Sessions.OrderByDescending(s => s.Date))
+                    {
+                        <div class="session-row">
+                            <div class="session-rounds">@session.RoundsFired</div>
+                            <div class="session-meta">
+                                <div class="session-date">
+                                    @session.Date.ToLocalTime().ToString("MMM d, yyyy  h:mm tt")
+                                    &middot;
+                                    @if (session.Mode == TrackingMode.Magazine && session.Magazine != null)
+                                    {
+                                        <span>@session.Magazine.DisplayLabel</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Tally</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(session.Notes))
+                                {
+                                    <div class="session-note">@session.Notes</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    List<Firearm> firearms = new();
+    bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        firearms = await Svc.GetFirearmsAsync();
+        // Load full details for sessions
+        var detailed = new List<Firearm>();
+        foreach (var f in firearms)
+        {
+            var full = await Svc.GetFirearmAsync(f.Id);
+            if (full != null) detailed.Add(full);
+        }
+        firearms = detailed;
+        loading = false;
+    }
+}

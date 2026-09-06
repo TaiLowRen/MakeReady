@@ -1,0 +1,456 @@
+@page "/firearm/{Id:int}"
+@inject FirearmService Svc
+@inject AmmoService AmmoSvc
+@inject NavigationManager Nav
+@using MakeReady.Models
+@using MakeReady.Data
+
+<div class="app-header">
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo("/")'>
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div style="flex:1; min-width:0;">
+        <div class="header-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            @(firearm?.DisplayName ?? "Loading...")
+        </div>
+    </div>
+    @if (firearm != null)
+    {
+        <button class="btn-icon" @onclick='() => Nav.NavigateTo($"/firearm/{Id}/edit")' title="Edit">
+            <i class="bi bi-pencil"></i>
+        </button>
+    }
+</div>
+
+@if (firearm == null)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else
+{
+    <div class="page-body">
+        <!-- Stats row -->
+        <div class="d-flex gap-2 flex-wrap mb-3">
+            <span class="stat-badge">
+                <i class="bi bi-bullseye"></i>
+                <span>Total rounds</span>
+                <span class="stat-val">@firearm.TotalRoundsFired.ToString("N0")</span>
+            </span>
+            <span class="stat-badge">
+                <i class="bi bi-journals"></i>
+                <span>Sessions</span>
+                <span class="stat-val">@firearm.Sessions.Count</span>
+            </span>
+            <span class="stat-badge">
+                <i class="bi bi-stack"></i>
+                <span>Magazines</span>
+                <span class="stat-val">@firearm.Magazines.Count</span>
+            </span>
+            @if (firearm.Malfunctions.Count > 0)
+            {
+                <span class="stat-badge">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span>Malfunctions</span>
+                    <span class="stat-val" style="color:@(firearm.MalfunctionRate > 5 ? "var(--mr-red)" : "var(--mr-accent)")">
+                        @firearm.Malfunctions.Count
+                    </span>
+                </span>
+            }
+        </div>
+
+        <button class="btn-mr-primary mb-4" @onclick='() => Nav.NavigateTo($"/track/{Id}")'>
+            <i class="bi bi-crosshair2 me-2"></i>Start Tracking Session
+        </button>
+
+        <!-- Tabs -->
+        <div class="detail-tabs">
+            <button class="detail-tab @(tab == 0 ? "active" : "")" @onclick='() => tab = 0'>Mods</button>
+            <button class="detail-tab @(tab == 1 ? "active" : "")" @onclick='() => tab = 1'>Magazines</button>
+            <button class="detail-tab @(tab == 2 ? "active" : "")" @onclick='() => tab = 2'>Malfunctions</button>
+            <button class="detail-tab @(tab == 3 ? "active" : "")" @onclick='() => tab = 3'>History</button>
+        </div>
+
+        <!-- Mods & Accessories tab -->
+        @if (tab == 0)
+        {
+            <div class="section-label">Modifications & Accessories</div>
+
+            @if (firearm.Modifications.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-tools"></i>
+                    <p>No modifications added yet.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var mod in firearm.Modifications)
+                {
+                    <div class="mr-card" style="margin-bottom:8px;">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="@(mod.Type == ModificationType.Modification ? "tag tag-mod" : "tag tag-acc")">
+                                @(mod.Type == ModificationType.Modification ? "Mod" : "Accessory")
+                            </span>
+                            <span style="font-weight:600; flex:1;">@mod.Name</span>
+                            <button class="btn-icon danger" @onclick="() => RemoveMod(mod.Id)">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(mod.Notes))
+                        {
+                            <div style="font-size:0.82rem; color:var(--mr-text-muted); margin-top:8px;">@mod.Notes</div>
+                        }
+                    </div>
+                }
+            }
+
+            <!-- Add mod form -->
+            <div class="mr-card" style="margin-top:16px; border-color:var(--mr-accent); border-style:dashed;">
+                <div class="section-label" style="margin-top:0;">Add Item</div>
+                <div class="mb-3">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" @bind="newModType">
+                        <option value="@ModificationType.Modification">Modification</option>
+                        <option value="@ModificationType.Accessory">Accessory</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <input class="form-control" @bind="newModName" placeholder="e.g. Trijicon RMR, Match trigger, Threaded barrel" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Notes <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                    <input class="form-control" @bind="newModNotes" placeholder="Brand, model, install date..." />
+                </div>
+                <button class="btn-mr-primary" @onclick="AddMod" disabled="@(string.IsNullOrWhiteSpace(newModName))">
+                    <i class="bi bi-plus-lg me-2"></i>Add
+                </button>
+            </div>
+        }
+
+        <!-- Magazines tab -->
+        @if (tab == 1)
+        {
+            <div class="section-label">Magazines</div>
+
+            @if (firearm.Magazines.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-stack"></i>
+                    <p>No magazines added yet.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var mag in firearm.Magazines)
+                {
+                    <div class="mr-card mr-card-pressable" style="margin-bottom:8px;"
+                         @onclick='() => Nav.NavigateTo($"/magazine/{mag.Id}")'>
+                        <div class="d-flex align-items-center gap-2">
+                            <div style="flex:1;">
+                                <div style="font-weight:600;">@mag.DisplayLabel</div>
+                                <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-top:2px;">
+                                    @mag.Capacity rd capacity &middot; @mag.TotalRoundsFired.ToString("N0") rounds fired
+                                </div>
+                            </div>
+                            <i class="bi bi-chevron-right" style="color:var(--mr-text-muted);"></i>
+                        </div>
+                    </div>
+                }
+            }
+
+            <!-- Add mag form -->
+            <div class="mr-card" style="margin-top:16px; border-color:var(--mr-accent); border-style:dashed;">
+                <div class="section-label" style="margin-top:0;">Add Magazine</div>
+                <div class="mb-3">
+                    <label class="form-label">Capacity (rounds)</label>
+                    <input type="number" class="form-control" @bind="newMagCapacity" min="1" max="200" placeholder="15" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Label <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                    <input class="form-control" @bind="newMagLabel" placeholder='e.g. "Extended", "Backup #1"' />
+                </div>
+                <button class="btn-mr-primary" @onclick="AddMag" disabled="@(newMagCapacity < 1)">
+                    <i class="bi bi-plus-lg me-2"></i>Add Magazine
+                </button>
+            </div>
+        }
+
+        <!-- Malfunctions tab -->
+        @if (tab == 2)
+        {
+            <div class="section-label">Malfunction Log</div>
+
+            @if (firearm.Malfunctions.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-shield-check" style="color:var(--mr-green); opacity:0.7;"></i>
+                    <p style="color:var(--mr-green);">No malfunctions recorded.</p>
+                </div>
+            }
+            else
+            {
+                @if (firearm.TotalRoundsFired > 0)
+                {
+                    <div class="d-flex gap-2 flex-wrap mb-3">
+                        <span class="stat-badge">
+                            <i class="bi bi-percent"></i>
+                            <span>Malfunction rate</span>
+                            <span class="stat-val" style="color:@(firearm.MalfunctionRate > 5 ? "var(--mr-red)" : "var(--mr-accent)")">
+                                @firearm.MalfunctionRate.ToString("F2")%
+                            </span>
+                        </span>
+                        <span class="stat-badge">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>Total</span>
+                            <span class="stat-val">@firearm.Malfunctions.Count</span>
+                        </span>
+                    </div>
+                }
+
+                <div class="mr-card" style="padding:8px 16px; margin-bottom:16px;">
+                    @foreach (var mf in firearm.Malfunctions.OrderByDescending(m => m.Date))
+                    {
+                        <div class="session-row">
+                            <div style="min-width:36px; display:flex; align-items:center; justify-content:center;">
+                                <i class="bi bi-exclamation-triangle-fill" style="color:var(--mr-red); font-size:1.1rem;"></i>
+                            </div>
+                            <div class="session-meta" style="flex:1;">
+                                <div style="font-weight:600; font-size:0.9rem;">@mf.TypeLabel</div>
+                                <div class="session-date">@mf.Date.ToLocalTime().ToString("MMM d, yyyy  h:mm tt")</div>
+                                @if (mf.Ammo != null)
+                                {
+                                    <div class="session-note" style="color:var(--mr-accent);">
+                                        <i class="bi bi-bullseye me-1"></i>@mf.Ammo.ShortName
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(mf.Notes))
+                                {
+                                    <div class="session-note">@mf.Notes</div>
+                                }
+                            </div>
+                            <button class="btn-icon danger" @onclick="() => RemoveFirearmMalfunction(mf.Id)">
+                                <i class="bi bi-trash3" style="font-size:1rem;"></i>
+                            </button>
+                        </div>
+                    }
+                </div>
+
+                <div class="section-label">By Type</div>
+                <div class="mr-card">
+                    @foreach (var group in FirearmMalfunctionsByType)
+                    {
+                        var pct = (double)group.Count() / firearm.Malfunctions.Count * 100;
+                        <div style="margin-bottom:12px;">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span style="font-size:0.85rem; font-weight:600;">@group.Key</span>
+                                <span style="font-size:0.8rem; color:var(--mr-text-muted);">@group.Count() (@pct.ToString("F0")%)</span>
+                            </div>
+                            <div style="height:6px; background:var(--mr-surface-2); border-radius:4px;">
+                                <div style="height:6px; background:var(--mr-red); border-radius:4px; width:@(pct.ToString("F0"))%;"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Log malfunction -->
+            <div class="mr-card" style="margin-top:16px; border-color:var(--mr-red); border-style:dashed;">
+                <div class="section-label" style="margin-top:0; color:var(--mr-red);">Log Malfunction</div>
+                <div class="mb-3">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" @bind="newMalfType">
+                        @foreach (var t in Enum.GetValues<MalfunctionType>())
+                        {
+                            <option value="@t">@MalfunctionTypeLabel(t)</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ammo Loaded <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                    <select class="form-select" @bind="newMalfAmmoId">
+                        <option value="">— Not specified —</option>
+                        @foreach (var a in allAmmos)
+                        {
+                            <option value="@a.Id">@a.ShortName</option>
+                        }
+                    </select>
+                    @if (!allAmmos.Any())
+                    {
+                        <div style="font-size:0.72rem; color:var(--mr-text-muted); margin-top:4px;">
+                            <a href="/ammo" style="color:var(--mr-accent);">Add ammo to your library</a> to track which loads cause issues.
+                        </div>
+                    }
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Notes <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                    <textarea class="form-control" @bind="newMalfNotes" rows="2"
+                              placeholder="Round count, conditions, drill..."></textarea>
+                </div>
+                <button class="btn-mr-danger" style="width:100%; padding:14px;" @onclick="AddFirearmMalfunction">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Log Malfunction
+                </button>
+            </div>
+        }
+
+        <!-- History tab -->
+        @if (tab == 3)
+        {
+            <div class="section-label">Session History</div>
+
+            @if (firearm.Sessions.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-clock-history"></i>
+                    <p>No sessions recorded yet.</p>
+                </div>
+            }
+            else
+            {
+                <div class="mr-card">
+                    @foreach (var session in firearm.Sessions.OrderByDescending(s => s.Date))
+                    {
+                        <div class="session-row">
+                            <div class="session-rounds">@session.RoundsFired</div>
+                            <div class="session-meta">
+                                <div class="session-date">
+                                    @session.Date.ToLocalTime().ToString("MMM d, yyyy  h:mm tt")
+                                    &middot; @session.Mode
+                                    @if (session.Magazine != null)
+                                    { <span> &middot; @session.Magazine.DisplayLabel</span> }
+                                </div>
+                                @if (session.Ammo != null)
+                                {
+                                    <div class="session-note" style="color:var(--mr-accent);">
+                                        <i class="bi bi-bullseye me-1"></i>@session.Ammo.ShortName
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(session.Notes))
+                                {
+                                    <div class="session-note">@session.Notes</div>
+                                }
+                            </div>
+                            <button class="btn-icon danger" @onclick="() => RemoveSession(session.Id)">
+                                <i class="bi bi-trash3" style="font-size:1rem;"></i>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    Firearm? firearm;
+    int tab = 0;
+
+    string newModName = "";
+    string newModNotes = "";
+    ModificationType newModType = ModificationType.Modification;
+
+    int newMagCapacity = 0;
+    string newMagLabel = "";
+
+    MalfunctionType newMalfType  = MalfunctionType.FailureToFeed;
+    string newMalfNotes          = "";
+    string newMalfAmmoId         = "";
+
+    List<Ammo> allAmmos = new();
+
+    IEnumerable<IGrouping<string, FirearmMalfunction>> FirearmMalfunctionsByType =>
+        firearm?.Malfunctions.GroupBy(m => m.TypeLabel).OrderByDescending(g => g.Count())
+        ?? Enumerable.Empty<IGrouping<string, FirearmMalfunction>>();
+
+    static string MalfunctionTypeLabel(MalfunctionType t) => t switch
+    {
+        MalfunctionType.FailureToFeed   => "Failure to Feed",
+        MalfunctionType.FailureToEject  => "Failure to Eject",
+        MalfunctionType.DoubleFeed      => "Double Feed",
+        MalfunctionType.Stovepipe       => "Stovepipe",
+        MalfunctionType.FailureToFire   => "Failure to Fire",
+        MalfunctionType.FailureToLock   => "Failure to Lock",
+        _                               => "Other"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        allAmmos = await AmmoSvc.GetAllAsync();
+        await Reload();
+    }
+
+    async Task Reload()
+    {
+        firearm = await Svc.GetFirearmAsync(Id);
+        StateHasChanged();
+    }
+
+    async Task AddMod()
+    {
+        if (string.IsNullOrWhiteSpace(newModName)) return;
+        await Svc.AddModificationAsync(new Modification
+        {
+            FirearmId = Id,
+            Name = newModName.Trim(),
+            Type = newModType,
+            Notes = string.IsNullOrWhiteSpace(newModNotes) ? null : newModNotes.Trim()
+        });
+        newModName = "";
+        newModNotes = "";
+        await Reload();
+    }
+
+    async Task RemoveMod(int modId)
+    {
+        await Svc.DeleteModificationAsync(modId);
+        await Reload();
+    }
+
+    async Task AddMag()
+    {
+        if (newMagCapacity < 1) return;
+        await Svc.SaveMagazineAsync(new Magazine
+        {
+            FirearmId = Id,
+            Capacity = newMagCapacity,
+            Label = newMagLabel.Trim()
+        });
+        newMagCapacity = 0;
+        newMagLabel = "";
+        await Reload();
+    }
+
+    async Task RemoveMag(int magId)
+    {
+        await Svc.DeleteMagazineAsync(magId);
+        await Reload();
+    }
+
+    async Task AddFirearmMalfunction()
+    {
+        await Svc.AddFirearmMalfunctionAsync(new FirearmMalfunction
+        {
+            FirearmId = Id,
+            Type      = newMalfType,
+            AmmoId    = int.TryParse(newMalfAmmoId, out var aid) ? aid : null,
+            Notes     = string.IsNullOrWhiteSpace(newMalfNotes) ? null : newMalfNotes.Trim()
+        });
+        newMalfNotes = "";
+        newMalfAmmoId = "";
+        await Reload();
+    }
+
+    async Task RemoveFirearmMalfunction(int mfId)
+    {
+        await Svc.DeleteFirearmMalfunctionAsync(mfId);
+        await Reload();
+    }
+
+    async Task RemoveSession(int sessionId)
+    {
+        await Svc.DeleteSessionAsync(sessionId);
+        await Reload();
+    }
+}

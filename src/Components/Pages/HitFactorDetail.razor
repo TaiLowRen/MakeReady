@@ -1,0 +1,342 @@
+@page "/hitfactor/{Id:int}"
+@inject HitFactorService HfSvc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo("/hitfactor")'>
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div style="flex:1; min-width:0;">
+        <div class="header-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            @(session?.Name ?? "Loading...")
+        </div>
+        @if (session != null)
+        {
+            <div class="header-subtitle">
+                @session.Date.ToLocalTime().ToString("MMM d, yyyy")
+                @if (!string.IsNullOrWhiteSpace(session.Location)) { <span> &middot; @session.Location</span> }
+            </div>
+        }
+    </div>
+    @if (session != null)
+    {
+        <button class="btn-icon" @onclick='() => Nav.NavigateTo($"/hitfactor/{Id}/edit")'>
+            <i class="bi bi-pencil"></i>
+        </button>
+    }
+</div>
+
+@if (session == null)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else
+{
+    <div class="page-body">
+
+        <!-- Summary stats -->
+        @if (session.Stages.Count > 0)
+        {
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                <span class="stat-badge">
+                    <i class="bi bi-list-ol"></i>
+                    <span>Stages</span>
+                    <span class="stat-val">@session.Stages.Count</span>
+                </span>
+                <span class="stat-badge">
+                    <i class="bi bi-arrow-up-circle"></i>
+                    <span>Best HF</span>
+                    <span class="stat-val" style="color:@HfColor(session.BestHitFactor)">
+                        @session.BestHitFactor.ToString("F4")
+                    </span>
+                </span>
+                <span class="stat-badge">
+                    <i class="bi bi-dash-circle"></i>
+                    <span>Avg HF</span>
+                    <span class="stat-val">@session.AverageHitFactor.ToString("F4")</span>
+                </span>
+                <span class="stat-badge">
+                    <i class="bi bi-arrow-down-circle"></i>
+                    <span>Worst HF</span>
+                    <span class="stat-val" style="color:var(--mr-text-muted)">
+                        @session.WorstHitFactor.ToString("F4")
+                    </span>
+                </span>
+            </div>
+
+            @if (session.Firearm != null)
+            {
+                <div class="stat-badge mb-3">
+                    <i class="bi bi-shield"></i>
+                    <span>@session.Firearm.DisplayName</span>
+                </div>
+            }
+        }
+
+        <!-- Tabs -->
+        <div class="detail-tabs">
+            <button class="detail-tab @(tab == 0 ? "active" : "")" @onclick='() => tab = 0'>Stages</button>
+            <button class="detail-tab @(tab == 1 ? "active" : "")" @onclick='() => tab = 1'>Add Stage</button>
+        </div>
+
+        <!-- Stages list tab -->
+        @if (tab == 0)
+        {
+            @if (session.Stages.Count == 0)
+            {
+                <div class="empty-state" style="padding:32px 0;">
+                    <i class="bi bi-trophy"></i>
+                    <p>No stages yet. Tap "Add Stage" to record your first score.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var stage in session.Stages.OrderBy(s => s.Id))
+                {
+                    <div class="mr-card" style="margin-bottom:10px;">
+                        <div class="d-flex align-items-start justify-content-between mb-2">
+                            <div>
+                                <div style="font-size:0.95rem; font-weight:700;">
+                                    @(string.IsNullOrWhiteSpace(stage.StageName) ? $"Stage {session.Stages.IndexOf(stage) + 1}" : stage.StageName)
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span style="font-size:1.6rem; font-weight:800; color:@stage.HitFactorColor; font-variant-numeric:tabular-nums; letter-spacing:-0.5px;">
+                                    @stage.HitFactor.ToString("F4")
+                                </span>
+                                <button class="btn-icon danger" @onclick="() => DeleteStage(stage.Id)">
+                                    <i class="bi bi-trash3" style="font-size:1rem;"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Class badge -->
+                        <div class="mb-2">
+                            <span class="tag" style="background:@(stage.HitFactorColor + "22"); color:@stage.HitFactorColor;">
+                                @stage.HitFactorClass
+                            </span>
+                            <span style="font-size:0.78rem; color:var(--mr-text-muted); margin-left:8px;">
+                                @stage.NetPoints pts &middot; @stage.Time.ToString("F2")s
+                            </span>
+                        </div>
+
+                        <!-- Hit breakdown -->
+                        <div class="d-flex flex-wrap gap-2" style="font-size:0.78rem;">
+                            @if (stage.AHits > 0)
+                            {
+                                <span style="color:var(--mr-green);">A: <strong>@stage.AHits</strong></span>
+                            }
+                            @if (stage.CHits > 0)
+                            {
+                                <span style="color:var(--mr-blue);">C: <strong>@stage.CHits</strong></span>
+                            }
+                            @if (stage.DHits > 0)
+                            {
+                                <span style="color:var(--mr-text-muted);">D: <strong>@stage.DHits</strong></span>
+                            }
+                            @if (stage.Misses > 0)
+                            {
+                                <span style="color:var(--mr-red);">Miss: <strong>@stage.Misses</strong></span>
+                            }
+                            @if (stage.NoShoots > 0)
+                            {
+                                <span style="color:var(--mr-red);">NS: <strong>@stage.NoShoots</strong></span>
+                            }
+                            @if (stage.Procedurals > 0)
+                            {
+                                <span style="color:var(--mr-red);">Proc: <strong>@stage.Procedurals</strong></span>
+                            }
+                        </div>
+
+                        <!-- Mini score bar: A ratio -->
+                        @if (stage.TotalHits > 0)
+                        {
+                            var aPct  = (double)stage.AHits / stage.TotalHits * 100;
+                            var cPct  = (double)stage.CHits / stage.TotalHits * 100;
+                            var dPct  = (double)stage.DHits / stage.TotalHits * 100;
+                            var mPct  = (double)stage.Misses / stage.TotalHits * 100;
+                            <div style="height:5px; border-radius:3px; overflow:hidden; display:flex; margin-top:10px;">
+                                <div style="width:@(aPct.ToString("F0"))%; background:var(--mr-green);"></div>
+                                <div style="width:@(cPct.ToString("F0"))%; background:var(--mr-blue);"></div>
+                                <div style="width:@(dPct.ToString("F0"))%; background:var(--mr-text-muted);"></div>
+                                <div style="width:@(mPct.ToString("F0"))%; background:var(--mr-red);"></div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- HF trend mini-chart -->
+                @if (session.Stages.Count > 1)
+                {
+                    <div class="section-label" style="margin-top:16px;">Hit Factor Trend</div>
+                    <div class="mr-card">
+                        @{ var maxHf = session.Stages.Max(s => s.HitFactor); }
+                        @foreach (var stage in session.Stages.OrderBy(s => s.Id))
+                        {
+                            var pct = maxHf > 0 ? stage.HitFactor / maxHf * 100 : 0;
+                            var name = string.IsNullOrWhiteSpace(stage.StageName)
+                                ? $"Stage {session.Stages.OrderBy(x => x.Id).ToList().IndexOf(stage) + 1}"
+                                : stage.StageName;
+                            <div style="margin-bottom:10px;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span style="font-size:0.8rem; color:var(--mr-text-muted);">@name</span>
+                                    <span style="font-size:0.85rem; font-weight:700; color:@stage.HitFactorColor;">@stage.HitFactor.ToString("F4")</span>
+                                </div>
+                                <div style="height:6px; background:var(--mr-surface-2); border-radius:4px;">
+                                    <div style="height:6px; background:@stage.HitFactorColor; border-radius:4px; width:@(pct.ToString("F0"))%; transition:width 0.3s;"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        }
+
+        <!-- Add Stage tab -->
+        @if (tab == 1)
+        {
+            <div class="mb-3">
+                <label class="form-label">Stage Name <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <input class="form-control" @bind="entry.StageName" placeholder='e.g. "Stage 1", "Short Course"' />
+            </div>
+
+            <div class="mr-card" style="margin-bottom:12px;">
+                <div class="section-label" style="margin-top:0; color:var(--mr-green);">Hits</div>
+                @StepperRow("A-Zone", "5 pts ea", entry.AHits, v => entry.AHits = v)
+                @StepperRow("C-Zone", "3 pts ea", entry.CHits, v => entry.CHits = v)
+                @StepperRow("D-Zone", "1 pt ea",  entry.DHits, v => entry.DHits = v)
+            </div>
+
+            <div class="mr-card" style="margin-bottom:12px;">
+                <div class="section-label" style="margin-top:0; color:var(--mr-red);">Penalties (-10 pts ea)</div>
+                @StepperRow("Miss",       "", entry.Misses,      v => entry.Misses = v)
+                @StepperRow("No-Shoot",   "", entry.NoShoots,    v => entry.NoShoots = v)
+                @StepperRow("Proc Error", "", entry.Procedurals, v => entry.Procedurals = v)
+            </div>
+
+            <div class="mr-card" style="margin-bottom:16px;">
+                <label class="form-label">Time (seconds)</label>
+                <input type="number" class="form-control" step="0.01" min="0.01"
+                       @bind="entry.Time" @bind:event="oninput"
+                       placeholder="e.g. 12.35" />
+            </div>
+
+            <!-- Live result card -->
+            <div class="mr-card" style="border-color:@HfColor(entry.HitFactor); background:var(--mr-surface-2); margin-bottom:16px;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="section-label" style="margin:0 0 2px;">Hit Factor</div>
+                        <div style="font-size:2.5rem; font-weight:800; line-height:1; color:@HfColor(entry.HitFactor); font-variant-numeric:tabular-nums;">
+                            @entry.HitFactor.ToString("F4")
+                        </div>
+                        @if (entry.Time > 0)
+                        {
+                            <div style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; color:@HfColor(entry.HitFactor); margin-top:4px;">
+                                @entry.HitFactorClass CLASS
+                            </div>
+                        }
+                    </div>
+                    <div style="text-align:right; font-size:0.85rem;">
+                        <div style="color:var(--mr-green);">+@entry.ScoredPoints pts</div>
+                        <div style="color:var(--mr-red);">-@entry.Penalties pen</div>
+                        <div style="font-weight:700; margin-top:4px;">= @entry.NetPoints net</div>
+                    </div>
+                </div>
+            </div>
+
+            @if (saveError != null)
+            {
+                <div style="background:rgba(248,81,73,0.1); border:1px solid var(--mr-red); border-radius:10px; padding:12px; margin-bottom:12px; color:var(--mr-red); font-size:0.875rem;">
+                    @saveError
+                </div>
+            }
+
+            <div class="d-flex flex-column gap-3">
+                <button class="btn-mr-primary" @onclick="SaveStage" disabled="@savingStage">
+                    @(savingStage ? "Saving..." : "Save Stage")
+                </button>
+                <button class="btn-mr-secondary" @onclick="ResetEntry">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+                </button>
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    HitFactorSession? session;
+    int tab = 0;
+    HitFactorStage entry = new();
+    bool savingStage = false;
+    string? saveError;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    async Task Reload()
+    {
+        session = await HfSvc.GetSessionAsync(Id);
+        StateHasChanged();
+    }
+
+    async Task SaveStage()
+    {
+        if (entry.Time <= 0)
+        {
+            saveError = "Enter a time greater than 0.";
+            return;
+        }
+        if (entry.TotalHits == 0 && entry.NetPoints == 0)
+        {
+            saveError = "Enter at least one hit or penalty.";
+            return;
+        }
+        savingStage = true;
+        saveError = null;
+        entry.HitFactorSessionId = Id;
+        await HfSvc.AddStageAsync(entry);
+        entry = new();
+        tab = 0;
+        await Reload();
+        savingStage = false;
+    }
+
+    async Task DeleteStage(int stageId)
+    {
+        await HfSvc.DeleteStageAsync(stageId);
+        await Reload();
+    }
+
+    void ResetEntry() => entry = new();
+
+    static string HfColor(double hf) => hf switch
+    {
+        >= 8 => "#d4a017",
+        >= 5 => "#c0392b",
+        >= 3 => "#3498db",
+        >= 2 => "#27ae60",
+        >= 1 => "#7f8c8d",
+        _    => "#8b949e"
+    };
+
+    RenderFragment StepperRow(string label, string sub, int value, Action<int> setter) =>
+        @<div class="d-flex align-items-center gap-2 mb-3">
+            <div style="flex:1; min-width:0;">
+                <div style="font-size:0.9rem; font-weight:600;">@label</div>
+                @if (!string.IsNullOrEmpty(sub))
+                {
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted);">@sub</div>
+                }
+            </div>
+            <button class="stepper-btn" @onclick='() => { if (value > 0) setter(value - 1); }'>
+                <i class="bi bi-dash"></i>
+            </button>
+            <div class="stepper-val">@value</div>
+            <button class="stepper-btn" @onclick='() => setter(value + 1)'>
+                <i class="bi bi-plus"></i>
+            </button>
+        </div>;
+}

@@ -1,0 +1,216 @@
+@page "/hitfactor"
+@inject HitFactorService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <div>
+        <div class="header-title">Hit Factor</div>
+        <div class="header-subtitle">USPSA / IPSC Scoring</div>
+    </div>
+    @if (tab == 0)
+    {
+        <button class="btn-icon" @onclick='() => Nav.NavigateTo("/hitfactor/new")' title="New session">
+            <i class="bi bi-plus-lg"></i>
+        </button>
+    }
+</div>
+
+<div style="padding: 12px 16px 0;">
+    <div class="mode-tabs">
+        <button class="mode-tab @(tab == 0 ? "active" : "")" @onclick='() => tab = 0'>
+            <i class="bi bi-journals me-1"></i> Sessions
+        </button>
+        <button class="mode-tab @(tab == 1 ? "active" : "")" @onclick='() => tab = 1'>
+            <i class="bi bi-calculator me-1"></i> Calculator
+        </button>
+    </div>
+</div>
+
+<!-- Sessions tab -->
+@if (tab == 0)
+{
+    <div class="page-body">
+        @if (loading)
+        {
+            <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+        }
+        else if (sessions.Count == 0)
+        {
+            <div class="empty-state" style="margin-top:32px;">
+                <i class="bi bi-trophy"></i>
+                <p style="font-size:1rem; font-weight:600; color:var(--mr-text); margin-bottom:8px;">No sessions yet</p>
+                <p>Record a match or practice session to track your hit factor over time.</p>
+                <button class="btn-mr-primary" style="max-width:240px; margin-top:20px;"
+                        @onclick='() => Nav.NavigateTo("/hitfactor/new")'>
+                    <i class="bi bi-plus-lg me-2"></i>New Session
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="section-label">Session History</div>
+            @foreach (var session in sessions)
+            {
+                <div class="mr-card mr-card-pressable" @onclick='() => Nav.NavigateTo($"/hitfactor/{session.Id}")'>
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:1rem; font-weight:700;">@session.Name</div>
+                            <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-top:2px;">
+                                @session.Date.ToLocalTime().ToString("MMM d, yyyy")
+                                @if (!string.IsNullOrWhiteSpace(session.Location))
+                                { <span> &middot; @session.Location</span> }
+                                @if (session.Firearm != null)
+                                { <span> &middot; @session.Firearm.DisplayName</span> }
+                            </div>
+                        </div>
+                        <i class="bi bi-chevron-right" style="color:var(--mr-text-muted); margin-left:8px; flex-shrink:0;"></i>
+                    </div>
+
+                    @if (session.Stages.Count > 0)
+                    {
+                        <hr class="mr-divider" />
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="stat-badge">
+                                <i class="bi bi-list-ol"></i>
+                                <span>Stages</span>
+                                <span class="stat-val">@session.Stages.Count</span>
+                            </span>
+                            <span class="stat-badge">
+                                <i class="bi bi-arrow-up-circle"></i>
+                                <span>Best HF</span>
+                                <span class="stat-val" style="color:@HfColor(session.BestHitFactor)">
+                                    @session.BestHitFactor.ToString("F4")
+                                </span>
+                            </span>
+                            <span class="stat-badge">
+                                <i class="bi bi-dash-circle"></i>
+                                <span>Avg HF</span>
+                                <span class="stat-val">@session.AverageHitFactor.ToString("F4")</span>
+                            </span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-top:8px;">No stages recorded</div>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+<!-- Quick Calculator tab -->
+@if (tab == 1)
+{
+    <div class="page-body">
+        <div class="section-label">Stage Score</div>
+
+        <!-- Zone steppers -->
+        <div class="mr-card" style="margin-bottom:12px;">
+            <div class="section-label" style="margin-top:0; color:var(--mr-green);">Hits</div>
+            @StepperRow("A-Zone", "5 pts ea", calc.AHits, v => { calc.AHits = v; })
+            @StepperRow("C-Zone", "3 pts ea", calc.CHits, v => { calc.CHits = v; })
+            @StepperRow("D-Zone", "1 pt ea",  calc.DHits, v => { calc.DHits = v; })
+        </div>
+
+        <div class="mr-card" style="margin-bottom:12px;">
+            <div class="section-label" style="margin-top:0; color:var(--mr-red);">Penalties (-10 pts ea)</div>
+            @StepperRow("Miss",      "", calc.Misses,      v => { calc.Misses = v; })
+            @StepperRow("No-Shoot",  "", calc.NoShoots,    v => { calc.NoShoots = v; })
+            @StepperRow("Proc Error","", calc.Procedurals, v => { calc.Procedurals = v; })
+        </div>
+
+        <div class="mr-card" style="margin-bottom:16px;">
+            <label class="form-label">Time (seconds)</label>
+            <input type="number" class="form-control" step="0.01" min="0.01"
+                   @bind="calc.Time" @bind:event="oninput"
+                   placeholder="e.g. 12.35" />
+        </div>
+
+        <!-- Live result -->
+        <div class="mr-card" style="border-color:@HfColor(calc.HitFactor); background:var(--mr-surface-2);">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <div class="section-label" style="margin:0 0 2px;">Hit Factor</div>
+                    <div style="font-size:3rem; font-weight:800; line-height:1; color:@HfColor(calc.HitFactor); font-variant-numeric:tabular-nums; letter-spacing:-1px;">
+                        @calc.HitFactor.ToString("F4")
+                    </div>
+                    @if (calc.Time > 0)
+                    {
+                        <div style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; color:@HfColor(calc.HitFactor); margin-top:4px;">
+                            @calc.HitFactorClass CLASS
+                        </div>
+                    }
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted); text-transform:uppercase; letter-spacing:0.06em;">Points</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:var(--mr-green);">+@calc.ScoredPoints</div>
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:6px;">Penalties</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:var(--mr-red);">-@calc.Penalties</div>
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:6px;">Net</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:@(calc.NetPoints >= 0 ? "var(--mr-text)" : "var(--mr-red)");">@calc.NetPoints pts</div>
+                </div>
+            </div>
+            <hr class="mr-divider" />
+            <div class="d-flex gap-3" style="font-size:0.78rem; color:var(--mr-text-muted);">
+                <span>A: <strong style="color:var(--mr-text);">@calc.AHits</strong></span>
+                <span>C: <strong style="color:var(--mr-text);">@calc.CHits</strong></span>
+                <span>D: <strong style="color:var(--mr-text);">@calc.DHits</strong></span>
+                <span>M: <strong style="color:var(--mr-red);">@calc.Misses</strong></span>
+                <span>NS: <strong style="color:var(--mr-red);">@calc.NoShoots</strong></span>
+                <span>P: <strong style="color:var(--mr-red);">@calc.Procedurals</strong></span>
+                @if (calc.Time > 0)
+                { <span>T: <strong style="color:var(--mr-text);">@calc.Time.ToString("F2")s</strong></span> }
+            </div>
+        </div>
+
+        <button class="btn-mr-secondary" @onclick="ResetCalc">
+            <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+        </button>
+    </div>
+}
+
+@code {
+    List<HitFactorSession> sessions = new();
+    bool loading = true;
+    int tab = 0;
+
+    HitFactorStage calc = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        sessions = await Svc.GetSessionsAsync();
+        loading = false;
+    }
+
+    void ResetCalc() => calc = new();
+
+    static string HfColor(double hf) => hf switch
+    {
+        >= 8 => "#d4a017",
+        >= 5 => "#c0392b",
+        >= 3 => "#3498db",
+        >= 2 => "#27ae60",
+        >= 1 => "#7f8c8d",
+        _    => "#8b949e"
+    };
+
+    RenderFragment StepperRow(string label, string sub, int value, Action<int> setter) =>
+        @<div class="d-flex align-items-center gap-2 mb-3">
+            <div style="flex:1; min-width:0;">
+                <div style="font-size:0.9rem; font-weight:600;">@label</div>
+                @if (!string.IsNullOrEmpty(sub))
+                {
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted);">@sub</div>
+                }
+            </div>
+            <button class="stepper-btn" @onclick='() => { if (value > 0) setter(value - 1); }'>
+                <i class="bi bi-dash"></i>
+            </button>
+            <div class="stepper-val">@value</div>
+            <button class="stepper-btn" @onclick='() => setter(value + 1)'>
+                <i class="bi bi-plus"></i>
+            </button>
+        </div>;
+}

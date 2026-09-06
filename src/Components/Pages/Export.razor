@@ -1,0 +1,613 @@
+@page "/export"
+@inject ExportService Svc
+@inject IJSRuntime JS
+@using MakeReady.Models
+@using MakeReady.Data
+@using System.Text
+
+<div class="app-header">
+    <div style="flex:1; min-width:0;">
+        <div class="header-title">Reports &amp; Export</div>
+        <div class="header-subtitle">Filterable dashboard &middot; CSV &amp; image export</div>
+    </div>
+</div>
+
+<div class="page-body">
+
+    <!-- ── Filters ─────────────────────────────────────────── -->
+    <div class="mr-card" style="margin-bottom:12px;">
+        <div class="section-label" style="margin-top:0; margin-bottom:10px;">Date Range</div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <input type="date" class="form-control" style="flex:1; min-width:130px;"
+                   @bind="fromDate" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+            <span style="color:var(--mr-text-muted); font-size:0.8rem;">to</span>
+            <input type="date" class="form-control" style="flex:1; min-width:130px;"
+                   @bind="toDate"   max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+            <button class="btn-icon" title="Clear dates" @onclick="ClearDates"
+                    style="@((fromDate == null && toDate == null) ? "opacity:0.3;" : "")">
+                <i class="bi bi-x-circle"></i>
+            </button>
+        </div>
+
+        <div class="section-label" style="margin-top:14px; margin-bottom:8px;">Firearm Category</div>
+        <div class="filter-chip-group">
+            <button class="filter-chip @(catFilter.Count == 0 ? "active" : "")"
+                    @onclick="() => catFilter.Clear()">All</button>
+            @foreach (var c in new[] { FirearmCategory.Handgun, FirearmCategory.LongGun, FirearmCategory.Other })
+            {
+                var label = c == FirearmCategory.Handgun ? "Handgun" : c == FirearmCategory.LongGun ? "Long Gun" : "Other";
+                <button class="filter-chip @(catFilter.Contains(c) ? "active" : "")"
+                        @onclick="() => ToggleCat(c)">@label</button>
+            }
+        </div>
+
+        <div class="section-label" style="margin-top:14px; margin-bottom:8px;">Firearms</div>
+        <div class="filter-chip-group">
+            <button class="filter-chip @(firarmFilter.Count == 0 ? "active" : "")"
+                    @onclick="() => firarmFilter.Clear()">All</button>
+            @foreach (var f in allFirearms)
+            {
+                <button class="filter-chip @(firarmFilter.Contains(f.Id) ? "active" : "")"
+                        @onclick="() => ToggleFirearm(f.Id)">@f.DisplayName</button>
+            }
+        </div>
+
+        <div class="section-label" style="margin-top:14px; margin-bottom:8px;">Rounds per Session</div>
+        <div class="d-flex gap-2 align-items-center">
+            <input type="number" class="form-control" style="flex:1;" placeholder="Min" min="0"
+                   @bind="minRounds" />
+            <span style="color:var(--mr-text-muted); font-size:0.8rem;">—</span>
+            <input type="number" class="form-control" style="flex:1;" placeholder="Max" min="0"
+                   @bind="maxRounds" />
+        </div>
+
+        <div class="section-label" style="margin-top:14px; margin-bottom:8px;">Data Sections</div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="section-toggle @(sections.RoundSessions ? "active" : "")"
+                    @onclick='() => sections.RoundSessions = !sections.RoundSessions'>
+                <i class="bi bi-bullseye"></i>Round Sessions
+            </button>
+            <button class="section-toggle @(sections.Malfunctions ? "active" : "")"
+                    @onclick='() => sections.Malfunctions = !sections.Malfunctions'>
+                <i class="bi bi-exclamation-triangle"></i>Malfunctions
+            </button>
+            <button class="section-toggle @(sections.HitFactor ? "active" : "")"
+                    @onclick='() => sections.HitFactor = !sections.HitFactor'>
+                <i class="bi bi-trophy"></i>Hit Factor
+            </button>
+            <button class="section-toggle @(sections.Maintenance ? "active" : "")"
+                    @onclick='() => sections.Maintenance = !sections.Maintenance'>
+                <i class="bi bi-tools"></i>Maintenance
+            </button>
+        </div>
+
+        <button class="btn-mr-primary" style="margin-top:16px;" @onclick="ApplyFilters" disabled="@loading">
+            @if (loading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            <i class="bi bi-funnel-fill me-2"></i>Apply Filters
+        </button>
+    </div>
+
+    <!-- ── Export actions ──────────────────────────────────── -->
+    @if (!string.IsNullOrEmpty(exportMsg))
+    {
+        <div class="export-msg @(exportError ? "error" : "")">
+            <i class="bi @(exportError ? "bi-x-circle" : "bi-check-circle") me-2"></i>@exportMsg
+        </div>
+    }
+    <div class="export-action-bar">
+        <button class="btn-mr-primary" @onclick="ExportCsv" disabled="@(data == null || exporting)">
+            @if (exporting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            <i class="bi bi-filetype-csv me-1"></i>Export CSV
+        </button>
+        <button class="btn-mr-secondary" @onclick="ExportImage" disabled="@(data == null || exporting)">
+            @if (exporting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            <i class="bi bi-image me-1"></i>Export PNG
+        </button>
+    </div>
+
+    <!-- ── Dashboard ───────────────────────────────────────── -->
+    @if (data == null && !loading)
+    {
+        <div class="empty-state" style="margin-top:32px;">
+            <i class="bi bi-bar-chart"></i>
+            <p>Set your filters and tap <strong>Apply Filters</strong> to load the dashboard.</p>
+        </div>
+    }
+    else if (data != null)
+    {
+        <!-- ── Round Tracking ───────────────────────── -->
+        @if (sections.RoundSessions)
+        {
+            <div class="section-divider"><i class="bi bi-bullseye me-1"></i>Round Tracking</div>
+
+            <div class="stat-grid">
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-accent);">@data.TotalRounds.ToString("N0")</div>
+                    <div class="stat-tile-label">Total Rounds</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-blue);">@data.Sessions.Count</div>
+                    <div class="stat-tile-label">Sessions</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-green);">@(data.Sessions.Count > 0 ? (data.TotalRounds / data.Sessions.Count).ToString("N0") : "—")</div>
+                    <div class="stat-tile-label">Avg / Session</div>
+                </div>
+            </div>
+
+            @if (RoundsByFirearm.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>Rounds by Firearm</div>
+                    @HBarChart("chart-rounds-firearm", RoundsByFirearm, Palette)
+                </div>
+            }
+            @if (RoundsByMonth.Count >= 2)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-graph-up"></i>Rounds Over Time (monthly)</div>
+                    @LineChart("chart-rounds-time", RoundsByMonth, "#58a6ff")
+                </div>
+            }
+        }
+
+        <!-- ── Malfunctions ─────────────────────────── -->
+        @if (sections.Malfunctions && data.TotalMalfunctions > 0)
+        {
+            <div class="section-divider"><i class="bi bi-exclamation-triangle me-1"></i>Malfunctions</div>
+
+            <div class="stat-grid">
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-red);">@data.TotalMalfunctions</div>
+                    <div class="stat-tile-label">Total</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-accent);">
+                        @(data.TotalRounds > 0 ? $"{(double)data.TotalMalfunctions / data.TotalRounds * 100:F2}%" : "—")
+                    </div>
+                    <div class="stat-tile-label">Rate</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-blue);">@data.FirearmMalfunctions.Count</div>
+                    <div class="stat-tile-label">Firearm</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-blue);">@data.MagMalfunctions.Count</div>
+                    <div class="stat-tile-label">Magazine</div>
+                </div>
+            </div>
+
+            @if (MalfunctionsByType.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>By Malfunction Type</div>
+                    @HBarChart("chart-mal-type", MalfunctionsByType, MalPalette)
+                </div>
+            }
+            @if (MalfunctionsByFirearm.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>By Firearm</div>
+                    @HBarChart("chart-mal-firearm", MalfunctionsByFirearm, Palette)
+                </div>
+            }
+        }
+
+        <!-- ── Hit Factor ───────────────────────────── -->
+        @if (sections.HitFactor && data.HitFactorSessions.Count > 0)
+        {
+            var allStages = data.HitFactorSessions.SelectMany(s => s.Stages).ToList();
+            <div class="section-divider"><i class="bi bi-trophy me-1"></i>Hit Factor</div>
+
+            <div class="stat-grid">
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:#d4a017;">@(allStages.Count > 0 ? allStages.Max(s => s.HitFactor).ToString("F2") : "—")</div>
+                    <div class="stat-tile-label">Best HF</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-green);">@(allStages.Count > 0 ? allStages.Average(s => s.HitFactor).ToString("F2") : "—")</div>
+                    <div class="stat-tile-label">Avg HF</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-blue);">@data.HitFactorSessions.Count</div>
+                    <div class="stat-tile-label">Sessions</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-text-muted);">@allStages.Count</div>
+                    <div class="stat-tile-label">Stages</div>
+                </div>
+            </div>
+
+            @if (HfTrend.Count >= 2)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-graph-up-arrow"></i>HF Trend (session avg)</div>
+                    @LineChart("chart-hf-trend", HfTrend, "#d4a017")
+                </div>
+            }
+            @if (HfClassDist.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>Class Distribution</div>
+                    @HBarChart("chart-hf-class", HfClassDist, HfClassPalette)
+                </div>
+            }
+            @if (HitBreakdown.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>Hit Quality (A / C / D / Miss)</div>
+                    @HBarChart("chart-hit-breakdown", HitBreakdown, HitPalette)
+                </div>
+            }
+        }
+
+        <!-- ── Maintenance ──────────────────────────── -->
+        @if (sections.Maintenance && data.MaintenanceLogs.Count > 0)
+        {
+            <div class="section-divider"><i class="bi bi-tools me-1"></i>Maintenance</div>
+
+            <div class="stat-grid">
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-green);">@data.MaintenanceLogs.Count</div>
+                    <div class="stat-tile-label">Cleanings</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-tile-val" style="color:var(--mr-blue);">
+                        @(data.MaintenanceLogs.SelectMany(l => l.CleanedParts).Count())
+                    </div>
+                    <div class="stat-tile-label">Parts Cleaned</div>
+                </div>
+            </div>
+
+            @if (CleaningsByFirearm.Count > 0)
+            {
+                <div class="chart-card">
+                    <div class="chart-header"><i class="bi bi-bar-chart-horizontal"></i>Cleanings by Firearm</div>
+                    @HBarChart("chart-maint-firearm", CleaningsByFirearm, Palette)
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    // ── State ────────────────────────────────────────────────
+    List<Firearm> allFirearms = new();
+    ExportData?   data;
+    ExportSections sections = new();
+    bool loading;
+    bool exporting;
+    string exportMsg   = "";
+    bool exportError;
+
+    // Filters
+    DateTime? fromDate;
+    DateTime? toDate;
+    HashSet<FirearmCategory> catFilter    = new();
+    HashSet<int>             firarmFilter = new();
+    int? minRounds;
+    int? maxRounds;
+
+    // ── Color palettes ────────────────────────────────────────
+    static readonly string[] Palette    = { "#d4a017","#3fb950","#58a6ff","#a371f7","#db6d28","#39d353","#f78166" };
+    static readonly string[] MalPalette = { "#f85149","#db6d28","#d4a017","#a371f7","#58a6ff","#3fb950","#8b949e" };
+    static readonly string[] HfClassPalette = { "#d4a017","#c0392b","#3498db","#27ae60","#7f8c8d","#8b949e" };
+    static readonly string[] HitPalette = { "#3fb950","#58a6ff","#8b949e","#f85149" };
+
+    // ── Computed chart data ───────────────────────────────────
+    List<(string Label, int Value)> RoundsByFirearm =>
+        data!.Sessions
+             .GroupBy(s => s.Firearm?.DisplayName ?? "Unassigned")
+             .Select(g => (g.Key, g.Sum(s => s.RoundsFired)))
+             .OrderByDescending(x => x.Item2).ToList();
+
+    List<(string Label, double Value)> RoundsByMonth =>
+        data!.Sessions
+             .GroupBy(s => new DateTime(s.Date.Year, s.Date.Month, 1))
+             .OrderBy(g => g.Key)
+             .Select(g => (g.Key.ToString("MMM yy"), (double)g.Sum(s => s.RoundsFired)))
+             .ToList();
+
+    List<(string Label, int Value)> MalfunctionsByType
+    {
+        get
+        {
+            var all = data!.FirearmMalfunctions.Select(m => m.TypeLabel)
+                .Concat(data!.MagMalfunctions.Select(m => m.TypeLabel));
+            return all.GroupBy(t => t)
+                      .Select(g => (g.Key, g.Count()))
+                      .OrderByDescending(x => x.Item2).ToList();
+        }
+    }
+
+    List<(string Label, int Value)> MalfunctionsByFirearm
+    {
+        get
+        {
+            var firearmSide = data!.FirearmMalfunctions.Select(m => m.Firearm?.DisplayName ?? "");
+            var magSide     = data!.MagMalfunctions.Select(m => m.Magazine?.Firearm?.DisplayName ?? "");
+            return firearmSide.Concat(magSide)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .GroupBy(n => n)
+                .Select(g => (g.Key, g.Count()))
+                .OrderByDescending(x => x.Item2).ToList();
+        }
+    }
+
+    List<(string Label, double Value)> HfTrend =>
+        data!.HitFactorSessions
+             .Where(s => s.Stages.Count > 0)
+             .OrderBy(s => s.Date)
+             .Select(s => (s.Name.Length > 12 ? s.Name[..12] : s.Name, s.AverageHitFactor))
+             .ToList();
+
+    List<(string Label, int Value)> HfClassDist
+    {
+        get
+        {
+            var classes = new[] { "GM", "M", "A", "B", "C", "D" };
+            return data!.HitFactorSessions.SelectMany(s => s.Stages)
+                .GroupBy(st => st.HitFactorClass)
+                .Select(g => (g.Key, g.Count()))
+                .OrderBy(x => Array.IndexOf(classes, x.Key)).ToList();
+        }
+    }
+
+    List<(string Label, int Value)> HitBreakdown
+    {
+        get
+        {
+            var stages = data!.HitFactorSessions.SelectMany(s => s.Stages).ToList();
+            if (stages.Count == 0) return new();
+            return new List<(string, int)>
+            {
+                ("A hits",   stages.Sum(s => s.AHits)),
+                ("C hits",   stages.Sum(s => s.CHits)),
+                ("D hits",   stages.Sum(s => s.DHits)),
+                ("Misses",   stages.Sum(s => s.Misses + s.NoShoots + s.Procedurals)),
+            };
+        }
+    }
+
+    List<(string Label, int Value)> CleaningsByFirearm =>
+        data!.MaintenanceLogs
+             .GroupBy(l => l.Firearm?.DisplayName ?? "")
+             .Where(g => !string.IsNullOrEmpty(g.Key))
+             .Select(g => (g.Key, g.Count()))
+             .OrderByDescending(x => x.Item2).ToList();
+
+    // ── Lifecycle ─────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        allFirearms = await Svc.GetAllFirearmsAsync();
+    }
+
+    // ── Filter actions ────────────────────────────────────────
+    void ToggleCat(FirearmCategory c)    { if (!catFilter.Remove(c))    catFilter.Add(c); }
+    void ToggleFirearm(int id)           { if (!firarmFilter.Remove(id)) firarmFilter.Add(id); }
+    void ClearDates()                    { fromDate = null; toDate = null; }
+
+    async Task ApplyFilters()
+    {
+        loading = true;
+        exportMsg = "";
+        StateHasChanged();
+        var filter = new ExportFilter
+        {
+            FromDate   = fromDate,
+            ToDate     = toDate,
+            Categories = catFilter.Count > 0 ? catFilter.ToList() : null,
+            FirearmIds = firarmFilter.Count > 0 ? firarmFilter.ToList() : null,
+            MinRounds  = minRounds,
+            MaxRounds  = maxRounds,
+        };
+        data = await Svc.GetDataAsync(filter, sections);
+        loading = false;
+    }
+
+    // ── Export: CSV ───────────────────────────────────────────
+    async Task ExportCsv()
+    {
+        if (data == null) return;
+        exporting   = true;
+        exportMsg   = "";
+        exportError = false;
+        StateHasChanged();
+        try
+        {
+            var csv      = Svc.BuildCsv(data, sections);
+            var filename = $"MakeReady_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+            if (DeviceInfo.Platform == DevicePlatform.iOS || DeviceInfo.Platform == DevicePlatform.Android)
+            {
+                var path = Path.Combine(FileSystem.CacheDirectory, filename);
+                await File.WriteAllTextAsync(path, csv, System.Text.Encoding.UTF8);
+                await Share.RequestAsync(new ShareFileRequest
+                {
+                    Title = "MakeReady Data Export",
+                    File  = new ShareFile(path, "text/csv")
+                });
+                exportMsg = "CSV ready — choose where to save it from the share sheet.";
+            }
+            else
+            {
+                // Windows: browser blob download via WebView2
+                await JS.InvokeVoidAsync("MakeReadyExport.downloadCsv", filename, csv);
+                exportMsg = $"CSV downloaded — {filename}";
+            }
+        }
+        catch (Exception ex) { exportMsg = ex.Message; exportError = true; }
+        exporting = false;
+    }
+
+    // ── Export: PNG ───────────────────────────────────────────
+    async Task ExportImage()
+    {
+        if (data == null) return;
+        exporting   = true;
+        exportMsg   = "";
+        exportError = false;
+        StateHasChanged();
+        try
+        {
+            var ids = VisibleChartIds();
+            if (ids.Count == 0) { exportMsg = "No charts to export."; exportError = true; exporting = false; return; }
+
+            var dataUrl = await JS.InvokeAsync<string>("MakeReadyExport.exportDashboardAsPng", ids);
+            if (string.IsNullOrEmpty(dataUrl)) throw new Exception("Canvas returned no data.");
+
+            var base64   = dataUrl.Replace("data:image/png;base64,", "");
+            var bytes    = Convert.FromBase64String(base64);
+            var filename = $"MakeReady_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+
+            if (DeviceInfo.Platform == DevicePlatform.iOS || DeviceInfo.Platform == DevicePlatform.Android)
+            {
+                var path = Path.Combine(FileSystem.CacheDirectory, filename);
+                await File.WriteAllBytesAsync(path, bytes);
+                await Share.RequestAsync(new ShareFileRequest
+                {
+                    Title = "MakeReady Report",
+                    File  = new ShareFile(path, "image/png")
+                });
+                exportMsg = "Image ready — save it to Photos or Files from the share sheet.";
+            }
+            else
+            {
+                var dir  = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "MakeReady", "exports");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, filename);
+                await File.WriteAllBytesAsync(path, bytes);
+                exportMsg = $"PNG saved to {path}";
+            }
+        }
+        catch (Exception ex) { exportMsg = ex.Message; exportError = true; }
+        exporting = false;
+    }
+
+    List<string> VisibleChartIds()
+    {
+        var ids = new List<string>();
+        if (sections.RoundSessions)
+        {
+            if (RoundsByFirearm.Count > 0) ids.Add("chart-rounds-firearm");
+            if (RoundsByMonth.Count >= 2)  ids.Add("chart-rounds-time");
+        }
+        if (sections.Malfunctions && data!.TotalMalfunctions > 0)
+        {
+            if (MalfunctionsByType.Count    > 0) ids.Add("chart-mal-type");
+            if (MalfunctionsByFirearm.Count > 0) ids.Add("chart-mal-firearm");
+        }
+        if (sections.HitFactor && data!.HitFactorSessions.Count > 0)
+        {
+            if (HfTrend.Count >= 2)       ids.Add("chart-hf-trend");
+            if (HfClassDist.Count > 0)    ids.Add("chart-hf-class");
+            if (HitBreakdown.Count > 0)   ids.Add("chart-hit-breakdown");
+        }
+        if (sections.Maintenance && data!.MaintenanceLogs.Count > 0)
+        {
+            if (CleaningsByFirearm.Count > 0) ids.Add("chart-maint-firearm");
+        }
+        return ids;
+    }
+
+    // ── SVG chart renderers ───────────────────────────────────
+    static MarkupString HBarChart(string id, List<(string Label, int Value)> rows, string[] palette)
+    {
+        if (rows.Count == 0)
+            return Empty(id);
+
+        const int W = 400, labelW = 130, barW = 210, rowH = 34, padTop = 12, padBot = 12;
+        int H = padTop + rows.Count * rowH + padBot;
+        var max = rows.Max(r => r.Value); if (max == 0) max = 1;
+
+        var sb = new StringBuilder();
+        sb.Append($"<svg id=\"{id}\" viewBox=\"0 0 {W} {H}\" width=\"100%\" xmlns=\"http://www.w3.org/2000/svg\">");
+        sb.Append($"<rect width=\"{W}\" height=\"{H}\" fill=\"#161b22\"/>");
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var (label, val) = rows[i];
+            var color  = palette[i % palette.Length];
+            var bw     = (int)((double)val / max * barW);
+            var y      = padTop + i * rowH;
+            var midY   = y + rowH / 2 + 4;
+
+            // bar track
+            sb.Append($"<rect x=\"{labelW}\" y=\"{y+6}\" width=\"{barW}\" height=\"{rowH-12}\" fill=\"#21262d\" rx=\"3\"/>");
+            // bar fill
+            if (bw > 0)
+                sb.Append($"<rect x=\"{labelW}\" y=\"{y+6}\" width=\"{bw}\" height=\"{rowH-12}\" fill=\"{color}\" rx=\"3\"/>");
+            // label
+            var lbl = label.Length > 16 ? label[..16] + "…" : label;
+            sb.Append($"<text x=\"{labelW-8}\" y=\"{midY}\" fill=\"#8b949e\" font-size=\"11\" text-anchor=\"end\" font-family=\"-apple-system,sans-serif\">{HE(lbl)}</text>");
+            // value
+            sb.Append($"<text x=\"{labelW+barW+8}\" y=\"{midY}\" fill=\"#e6edf3\" font-size=\"11\" font-family=\"-apple-system,sans-serif\">{val:N0}</text>");
+        }
+
+        sb.Append("</svg>");
+        return new MarkupString(sb.ToString());
+    }
+
+    static MarkupString LineChart(string id, List<(string Label, double Value)> pts, string color)
+    {
+        if (pts.Count < 2)
+            return Empty(id);
+
+        const int W = 400, H = 160, padL = 40, padR = 20, padT = 16, padB = 36;
+        int cw = W - padL - padR;
+        int ch = H - padT - padB;
+
+        var max = pts.Max(p => p.Value);
+        var min = Math.Max(0, pts.Min(p => p.Value) * 0.8);
+        var range = max - min; if (range == 0) range = 1;
+
+        double X(int i) => padL + (double)i / (pts.Count - 1) * cw;
+        double Y(double v) => padT + ch - (v - min) / range * ch;
+
+        var sb = new StringBuilder();
+        sb.Append($"<svg id=\"{id}\" viewBox=\"0 0 {W} {H}\" width=\"100%\" xmlns=\"http://www.w3.org/2000/svg\">");
+        sb.Append($"<rect width=\"{W}\" height=\"{H}\" fill=\"#161b22\"/>");
+
+        // Grid lines (4 horizontal)
+        for (int g = 0; g <= 3; g++)
+        {
+            var gv  = min + range * g / 3;
+            var gy  = Y(gv);
+            sb.Append($"<line x1=\"{padL}\" y1=\"{gy:F1}\" x2=\"{W-padR}\" y2=\"{gy:F1}\" stroke=\"#21262d\" stroke-width=\"1\"/>");
+            sb.Append($"<text x=\"{padL-4}\" y=\"{gy+4:F1}\" fill=\"#8b949e\" font-size=\"9\" text-anchor=\"end\" font-family=\"-apple-system,sans-serif\">{gv:F0}</text>");
+        }
+
+        // Area fill (gradient-like with low opacity)
+        var areaPoints = new StringBuilder();
+        areaPoints.Append($"{X(0):F1},{H - padB} ");
+        for (int i = 0; i < pts.Count; i++)
+            areaPoints.Append($"{X(i):F1},{Y(pts[i].Value):F1} ");
+        areaPoints.Append($"{X(pts.Count-1):F1},{H - padB}");
+        sb.Append($"<polygon points=\"{areaPoints}\" fill=\"{color}\" fill-opacity=\"0.1\"/>");
+
+        // Line
+        var line = string.Join(" ", pts.Select((p, i) => $"{X(i):F1},{Y(p.Value):F1}"));
+        sb.Append($"<polyline points=\"{line}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"2\" stroke-linejoin=\"round\"/>");
+
+        // Dots + X labels
+        for (int i = 0; i < pts.Count; i++)
+        {
+            sb.Append($"<circle cx=\"{X(i):F1}\" cy=\"{Y(pts[i].Value):F1}\" r=\"3.5\" fill=\"{color}\"/>");
+            if (pts.Count <= 12 || i % (pts.Count / 6 + 1) == 0)
+            {
+                var lbl = pts[i].Label.Length > 8 ? pts[i].Label[..8] : pts[i].Label;
+                sb.Append($"<text x=\"{X(i):F1}\" y=\"{H-padB+14}\" fill=\"#8b949e\" font-size=\"9\" text-anchor=\"middle\" font-family=\"-apple-system,sans-serif\">{HE(lbl)}</text>");
+            }
+        }
+
+        sb.Append("</svg>");
+        return new MarkupString(sb.ToString());
+    }
+
+    static MarkupString Empty(string id) =>
+        new($"<svg id=\"{id}\" viewBox=\"0 0 400 50\" width=\"100%\" xmlns=\"http://www.w3.org/2000/svg\">" +
+            $"<rect width=\"400\" height=\"50\" fill=\"#161b22\"/>" +
+            $"<text x=\"200\" y=\"30\" fill=\"#8b949e\" font-size=\"12\" text-anchor=\"middle\" font-family=\"-apple-system,sans-serif\">No data</text></svg>");
+
+    static string HE(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+}

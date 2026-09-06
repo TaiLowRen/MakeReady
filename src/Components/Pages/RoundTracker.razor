@@ -1,0 +1,379 @@
+@page "/track"
+@page "/track/{FirearmId:int}"
+@inject FirearmService Svc
+@inject AmmoService AmmoSvc
+@inject NavigationManager Nav
+@using MakeReady.Models
+@using MakeReady.Data
+
+<div class="app-header">
+    <button class="btn-icon" @onclick="GoBack">
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div style="flex:1; min-width:0;">
+        <div class="header-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            @(firearm?.DisplayName ?? "Track Rounds")
+        </div>
+        @if (firearm != null)
+        {
+            <div class="header-subtitle">Session rounds: @sessionRounds</div>
+        }
+    </div>
+    @if (firearm != null && sessionRounds > 0)
+    {
+        <button class="btn-icon" style="color:var(--mr-accent);" @onclick="() => showSaveModal = true" title="Save session">
+            <i class="bi bi-check-circle-fill"></i>
+        </button>
+    }
+</div>
+
+@if (firearm == null && !loading)
+{
+    <!-- Firearm selector when navigated directly to /track -->
+    <div class="page-body">
+        <div class="section-label">Select Firearm</div>
+        @if (allFirearms.Count == 0)
+        {
+            <div class="empty-state">
+                <i class="bi bi-shield-plus"></i>
+                <p>Add a firearm first.</p>
+                <button class="btn-mr-primary" style="max-width:220px; margin-top:16px;" @onclick='() => Nav.NavigateTo("/firearm/add")'>
+                    Add Firearm
+                </button>
+            </div>
+        }
+        else
+        {
+            @foreach (var gun in allFirearms)
+            {
+                <div class="mr-card mr-card-pressable" @onclick="() => SelectFirearm(gun)">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div style="font-weight:700;">@gun.DisplayName</div>
+                            <div style="font-size:0.8rem; color:var(--mr-text-muted);">@gun.TotalRoundsFired.ToString("N0") rounds total</div>
+                        </div>
+                        <i class="bi bi-chevron-right" style="color:var(--mr-text-muted);"></i>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+else if (loading)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else if (firearm != null)
+{
+    <!-- Mode selector -->
+    <div style="padding: 12px 16px 0;">
+        <div class="mode-tabs">
+            <button class="mode-tab @(mode == TrackingMode.Tally ? "active" : "")" @onclick='() => mode = TrackingMode.Tally'>
+                <i class="bi bi-123 me-1"></i> Tally
+            </button>
+            <button class="mode-tab @(mode == TrackingMode.Magazine ? "active" : "")" @onclick='() => mode = TrackingMode.Magazine'
+                    disabled="@(firearm.Magazines.Count == 0)">
+                <i class="bi bi-stack me-1"></i> By Magazine
+                @if (firearm.Magazines.Count == 0) { <span style="font-size:0.7rem;"> (none)</span> }
+            </button>
+        </div>
+    </div>
+
+    <!-- Round counter display -->
+    <div class="tracker-counter">
+        <div class="tracker-total">@sessionRounds</div>
+        <div class="tracker-label">Rounds this session</div>
+        @if (sessionRounds > 0)
+        {
+            <div style="margin-top:12px;">
+                <span class="stat-badge">
+                    <i class="bi bi-bullseye"></i>
+                    <span>Lifetime total</span>
+                    <span class="stat-val">@((firearm.TotalRoundsFired + sessionRounds).ToString("N0"))</span>
+                </span>
+            </div>
+        }
+    </div>
+
+    <div class="page-body" style="padding-top:0;">
+
+        <!-- Tally mode -->
+        @if (mode == TrackingMode.Tally)
+        {
+            <div class="section-label">Add Rounds</div>
+            <div class="row g-2 mb-2">
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(1)">+1</button></div>
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(5)">+5</button></div>
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(10)">+10</button></div>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(15)">+15</button></div>
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(20)">+20</button></div>
+                <div class="col-4"><button class="tally-btn" @onclick="() => AddRounds(25)">+25</button></div>
+            </div>
+
+            <div class="d-flex gap-2 mb-3">
+                <input type="number" class="form-control" @bind="customCount" @bind:event="oninput"
+                       placeholder="Custom count" min="1" style="flex:1;" />
+                <button class="tally-btn accent" style="width:auto; padding:0 20px; flex-shrink:0;"
+                        @onclick="AddCustom" disabled="@(customCount < 1)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+
+            @if (sessionRounds > 0)
+            {
+                <button class="tally-btn danger" style="height:48px; font-size:0.9rem; margin-bottom:8px;" @onclick="UndoLast">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Undo Last (+@lastAdded)
+                </button>
+            }
+        }
+
+        <!-- Magazine mode -->
+        @if (mode == TrackingMode.Magazine)
+        {
+            <div class="section-label">Tap a magazine to log rounds</div>
+            <div class="row g-2 mb-3">
+                @foreach (var mag in firearm.Magazines)
+                {
+                    var isSelected = selectedMagId == mag.Id;
+                    <div class="col-6">
+                        <div class="mag-tile @(isSelected ? "selected" : "")" @onclick="() => LogMagazine(mag)">
+                            <div class="mag-cap">@mag.Capacity</div>
+                            <div class="mag-lbl">@mag.DisplayLabel</div>
+                            <div class="mag-used">
+                                @(magUseCounts.TryGetValue(mag.Id, out var c) ? $"{c}x used this session" : "Not used")
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (sessionRounds > 0 && magUseCounts.Count > 0)
+            {
+                <button class="tally-btn danger" style="height:48px; font-size:0.9rem;" @onclick="UndoLastMag">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Undo Last Magazine
+                </button>
+            }
+
+            <div class="section-label" style="margin-top:16px;">Or add a manual count</div>
+            <div class="d-flex gap-2">
+                <input type="number" class="form-control" @bind="customCount" @bind:event="oninput"
+                       placeholder="Custom rounds" min="1" style="flex:1;" />
+                <button class="tally-btn accent" style="width:auto; padding:0 20px; flex-shrink:0;"
+                        @onclick="AddCustom" disabled="@(customCount < 1)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+        }
+
+        @if (sessionRounds > 0)
+        {
+            <hr class="mr-divider" style="margin-top:20px;" />
+            <button class="btn-mr-primary mt-2" @onclick="() => showSaveModal = true">
+                <i class="bi bi-check-circle me-2"></i>Save Session (@sessionRounds rounds)
+            </button>
+            <button class="btn-mr-danger mt-3" style="width:100%; padding:12px;" @onclick="ResetSession">
+                <i class="bi bi-x-circle me-2"></i>Discard Session
+            </button>
+        }
+    </div>
+}
+
+<!-- Save session modal -->
+@if (showSaveModal)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500; display:flex; align-items:flex-end;">
+        <div style="background:var(--mr-surface); border-radius:16px 16px 0 0; padding:24px 20px; width:100%; border-top:1px solid var(--mr-border);">
+            <div style="font-size:1rem; font-weight:700; margin-bottom:4px;">Save Session</div>
+            <div style="font-size:0.875rem; color:var(--mr-text-muted); margin-bottom:20px;">
+                @sessionRounds rounds &middot; @mode mode
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ammo Used <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <select class="form-select" @bind="sessionAmmoId">
+                    <option value="">— Not specified —</option>
+                    @foreach (var a in allAmmos)
+                    {
+                        <option value="@a.Id">@a.ShortName</option>
+                    }
+                </select>
+                @if (!allAmmos.Any())
+                {
+                    <div style="font-size:0.72rem; color:var(--mr-text-muted); margin-top:4px;">
+                        Add loads in <a href="/ammo" style="color:var(--mr-accent);">Ammo Library</a> to track them here.
+                    </div>
+                }
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Notes <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <textarea class="form-control" @bind="sessionNotes" rows="2" placeholder="Range notes, drill name, conditions..."></textarea>
+            </div>
+            <div class="d-flex flex-column gap-3">
+                <button class="btn-mr-primary" @onclick="SaveSession" disabled="@saving">
+                    @(saving ? "Saving..." : "Save Session")
+                </button>
+                <button class="btn-mr-secondary" @onclick="() => showSaveModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? FirearmId { get; set; }
+
+    Firearm? firearm;
+    List<Firearm> allFirearms = new();
+    bool loading = true;
+
+    TrackingMode mode = TrackingMode.Tally;
+    int sessionRounds = 0;
+    int lastAdded = 0;
+    int customCount = 0;
+    int? selectedMagId;
+    Dictionary<int, int> magUseCounts = new();
+    record MagLogEntry(int MagId, int Rounds);
+    List<MagLogEntry> magLog = new();
+    List<int> tallyHistory = new();
+
+    bool showSaveModal = false;
+    string sessionNotes  = "";
+    string sessionAmmoId = "";
+    bool saving = false;
+
+    List<Ammo> allAmmos = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        allAmmos = await AmmoSvc.GetAllAsync();
+        if (FirearmId.HasValue)
+        {
+            firearm = await Svc.GetFirearmAsync(FirearmId.Value);
+        }
+        else
+        {
+            allFirearms = await Svc.GetFirearmsAsync();
+        }
+        loading = false;
+    }
+
+    void SelectFirearm(Firearm gun)
+    {
+        firearm = gun;
+        Nav.NavigateTo($"/track/{gun.Id}", replace: true);
+    }
+
+    void AddRounds(int count)
+    {
+        lastAdded = count;
+        sessionRounds += count;
+        tallyHistory.Add(count);
+    }
+
+    void AddCustom()
+    {
+        if (customCount < 1) return;
+        AddRounds(customCount);
+        customCount = 0;
+    }
+
+    void UndoLast()
+    {
+        if (tallyHistory.Count == 0) return;
+        var last = tallyHistory[^1];
+        tallyHistory.RemoveAt(tallyHistory.Count - 1);
+        sessionRounds -= last;
+        lastAdded = tallyHistory.Count > 0 ? tallyHistory[^1] : 0;
+    }
+
+    void LogMagazine(Magazine mag)
+    {
+        selectedMagId = mag.Id;
+        magLog.Add(new MagLogEntry(mag.Id, mag.Capacity));
+        magUseCounts.TryGetValue(mag.Id, out var existing);
+        magUseCounts[mag.Id] = existing + 1;
+        sessionRounds += mag.Capacity;
+    }
+
+    void UndoLastMag()
+    {
+        if (magLog.Count == 0) return;
+        var last = magLog[^1];
+        magLog.RemoveAt(magLog.Count - 1);
+        sessionRounds -= last.Rounds;
+        magUseCounts[last.MagId]--;
+        if (magUseCounts[last.MagId] == 0) magUseCounts.Remove(last.MagId);
+        selectedMagId = magLog.Count > 0 ? magLog[^1].MagId : null;
+    }
+
+    async Task SaveSession()
+    {
+        if (firearm == null || sessionRounds == 0) return;
+        saving = true;
+
+        int? ammoId = int.TryParse(sessionAmmoId, out var aid) ? aid : null;
+        string? notes = string.IsNullOrWhiteSpace(sessionNotes) ? null : sessionNotes.Trim();
+
+        if (mode == TrackingMode.Magazine && magLog.Count > 0)
+        {
+            var groups = magLog.GroupBy(e => e.MagId);
+            foreach (var g in groups)
+            {
+                await Svc.LogSessionAsync(new RoundSession
+                {
+                    FirearmId   = firearm.Id,
+                    MagazineId  = g.Key,
+                    RoundsFired = g.Sum(e => e.Rounds),
+                    Mode        = TrackingMode.Magazine,
+                    AmmoId      = ammoId,
+                    Notes       = notes
+                });
+            }
+            var manualRounds = sessionRounds - magLog.Sum(e => e.Rounds);
+            if (manualRounds > 0)
+            {
+                await Svc.LogSessionAsync(new RoundSession
+                {
+                    FirearmId   = firearm.Id,
+                    RoundsFired = manualRounds,
+                    Mode        = TrackingMode.Tally,
+                    AmmoId      = ammoId,
+                    Notes       = notes
+                });
+            }
+        }
+        else
+        {
+            await Svc.LogSessionAsync(new RoundSession
+            {
+                FirearmId   = firearm.Id,
+                RoundsFired = sessionRounds,
+                Mode        = TrackingMode.Tally,
+                AmmoId      = ammoId,
+                Notes       = notes
+            });
+        }
+
+        Nav.NavigateTo($"/firearm/{firearm.Id}");
+    }
+
+    void ResetSession()
+    {
+        sessionRounds = 0;
+        lastAdded = 0;
+        customCount = 0;
+        selectedMagId = null;
+        magUseCounts.Clear();
+        magLog.Clear();
+        tallyHistory.Clear();
+        showSaveModal = false;
+    }
+
+    void GoBack()
+    {
+        if (FirearmId.HasValue)
+            Nav.NavigateTo($"/firearm/{FirearmId}");
+        else
+            Nav.NavigateTo("/");
+    }
+}

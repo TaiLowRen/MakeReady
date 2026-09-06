@@ -1,0 +1,136 @@
+@page "/hitfactor/new"
+@page "/hitfactor/{Id:int}/edit"
+@inject HitFactorService HfSvc
+@inject FirearmService FireSvc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick="GoBack">
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div class="header-title">@(isNew ? "New Session" : "Edit Session")</div>
+    @if (!isNew)
+    {
+        <button class="btn-icon danger" @onclick="() => showDeleteConfirm = true">
+            <i class="bi bi-trash3"></i>
+        </button>
+    }
+</div>
+
+<div class="page-body">
+    <div class="mb-4">
+        <label class="form-label">Session Name</label>
+        <input class="form-control" @bind="session.Name" placeholder='e.g. "Area 3 Match", "Tuesday Practice"' />
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-control" @bind="sessionDate" />
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label">Location <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+        <input class="form-control" @bind="session.Location" placeholder="Range or match venue" />
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label">Firearm <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+        <select class="form-select" @bind="selectedFirearmId">
+            <option value="">— None —</option>
+            @foreach (var gun in firearms)
+            {
+                <option value="@gun.Id">@gun.DisplayName</option>
+            }
+        </select>
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label">Notes <span style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+        <textarea class="form-control" @bind="session.Notes" rows="2" placeholder="Division, classifier, conditions..."></textarea>
+    </div>
+
+    @if (errorMsg != null)
+    {
+        <div style="background:rgba(248,81,73,0.1); border:1px solid var(--mr-red); border-radius:10px; padding:12px; margin-bottom:16px; color:var(--mr-red); font-size:0.875rem;">
+            @errorMsg
+        </div>
+    }
+
+    <div class="d-flex flex-column gap-3">
+        <button class="btn-mr-primary" @onclick="Save" disabled="@saving">
+            @(saving ? "Saving..." : isNew ? "Create Session" : "Save Changes")
+        </button>
+        <button class="btn-mr-secondary" @onclick="GoBack">Cancel</button>
+    </div>
+</div>
+
+@if (showDeleteConfirm)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500; display:flex; align-items:flex-end;">
+        <div style="background:var(--mr-surface); border-radius:16px 16px 0 0; padding:24px 20px; width:100%; border-top:1px solid var(--mr-border);">
+            <div style="font-size:1rem; font-weight:700; margin-bottom:8px;">Delete Session?</div>
+            <div style="font-size:0.875rem; color:var(--mr-text-muted); margin-bottom:24px;">
+                This will permanently delete "@session.Name" and all its stage scores.
+            </div>
+            <div class="d-flex flex-column gap-3">
+                <button class="btn-mr-danger" style="width:100%; padding:14px;" @onclick="ConfirmDelete">
+                    <i class="bi bi-trash3 me-2"></i>Yes, Delete
+                </button>
+                <button class="btn-mr-secondary" @onclick="() => showDeleteConfirm = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    HitFactorSession session = new() { Name = "" };
+    List<Firearm> firearms = new();
+    string selectedFirearmId = "";
+    DateTime sessionDate = DateTime.Today;
+    bool isNew = true;
+    bool saving = false;
+    bool showDeleteConfirm = false;
+    string? errorMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        firearms = await FireSvc.GetFirearmsAsync();
+        if (Id.HasValue)
+        {
+            isNew = false;
+            var loaded = await HfSvc.GetSessionAsync(Id.Value);
+            if (loaded != null)
+            {
+                session = loaded;
+                sessionDate = session.Date.ToLocalTime().Date;
+                selectedFirearmId = session.FirearmId?.ToString() ?? "";
+            }
+        }
+    }
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(session.Name))
+        {
+            errorMsg = "Session name is required.";
+            return;
+        }
+        saving = true;
+        errorMsg = null;
+        session.Date = sessionDate.ToUniversalTime();
+        session.FirearmId = int.TryParse(selectedFirearmId, out var fid) ? fid : null;
+        var saved = await HfSvc.SaveSessionAsync(session);
+        Nav.NavigateTo($"/hitfactor/{saved.Id}");
+    }
+
+    void GoBack() => Nav.NavigateTo(isNew ? "/hitfactor" : $"/hitfactor/{Id}");
+
+    async Task ConfirmDelete()
+    {
+        await HfSvc.DeleteSessionAsync(session.Id);
+        Nav.NavigateTo("/hitfactor");
+    }
+}

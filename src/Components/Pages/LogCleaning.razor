@@ -1,0 +1,145 @@
+@page "/maintenance/{FirearmId:int}/log"
+@inject MaintenanceService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo($"/maintenance/{FirearmId}")'>
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div>
+        <div class="header-title">Log Cleaning</div>
+        <div class="header-subtitle">@(firearm?.DisplayName ?? "Loading...")</div>
+    </div>
+</div>
+
+@if (firearm == null)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else
+{
+    <div class="page-body">
+        <div class="section-label">Date Cleaned</div>
+        <div class="mr-card mb-4">
+            <input type="date" class="form-control" @bind="cleanDate" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+        </div>
+
+        @if (firearm.Parts.Count > 0)
+        {
+            <div class="section-label">Parts Cleaned</div>
+            <div class="mr-card mb-4">
+                <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-bottom:12px;">
+                    Select every component serviced during this cleaning.
+                </div>
+                @foreach (var part in firearm.Parts)
+                {
+                    var checked_ = checkedPartIds.Contains(part.Id);
+                    <label class="d-flex align-items-center gap-3 py-2" style="cursor:pointer; border-bottom:1px solid var(--mr-border);">
+                        <input type="checkbox" checked="@checked_"
+                               @onchange="() => TogglePart(part.Id)"
+                               style="width:20px; height:20px; accent-color:var(--mr-accent); flex-shrink:0;" />
+                        <span style="flex:1;">@part.Name</span>
+                        @if (part.IntervalDays.HasValue)
+                        {
+                            <span style="font-size:0.72rem; color:var(--mr-text-muted);">every @part.IntervalDays days</span>
+                        }
+                    </label>
+                }
+                <div class="d-flex gap-3 mt-3" style="font-size:0.78rem;">
+                    <button style="background:none; border:none; color:var(--mr-accent); cursor:pointer; padding:0;"
+                            @onclick="SelectAll">Select all</button>
+                    <button style="background:none; border:none; color:var(--mr-text-muted); cursor:pointer; padding:0;"
+                            @onclick="SelectNone">Clear</button>
+                </div>
+            </div>
+        }
+
+        <div class="section-label">Notes</div>
+        <div class="mr-card mb-4">
+            <textarea class="form-control" @bind="notes" rows="3"
+                      placeholder="Optional: lubricant used, issues found, parts replaced..." />
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMsg))
+        {
+            <div class="alert alert-danger mb-3">@errorMsg</div>
+        }
+
+        <button class="btn-mr-primary" style="width:100%;" @onclick="Save" disabled="@saving">
+            @if (saving)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                <span>Saving...</span>
+            }
+            else
+            {
+                <i class="bi bi-check-lg me-2"></i>
+                <span>Save Cleaning Log</span>
+            }
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public int FirearmId { get; set; }
+
+    Firearm? firearm;
+    DateTime cleanDate = DateTime.Today;
+    string notes = "";
+    HashSet<int> checkedPartIds = new();
+    bool saving;
+    string errorMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        firearm = await Svc.GetFirearmDetailAsync(FirearmId);
+        if (firearm != null)
+            checkedPartIds = firearm.Parts.Select(p => p.Id).ToHashSet();
+    }
+
+    void TogglePart(int id)
+    {
+        if (!checkedPartIds.Remove(id))
+            checkedPartIds.Add(id);
+    }
+
+    void SelectAll()
+    {
+        if (firearm == null) return;
+        checkedPartIds = firearm.Parts.Select(p => p.Id).ToHashSet();
+    }
+
+    void SelectNone() => checkedPartIds.Clear();
+
+    async Task Save()
+    {
+        errorMsg = "";
+        if (cleanDate > DateTime.Today)
+        {
+            errorMsg = "Cleaning date cannot be in the future.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            var log = new MaintenanceLog
+            {
+                FirearmId    = FirearmId,
+                Date         = DateTime.SpecifyKind(cleanDate, DateTimeKind.Local).ToUniversalTime(),
+                Notes        = notes.Trim(),
+                CleanedParts = checkedPartIds
+                    .Select(id => new MaintenanceLogPart { MaintenancePartId = id, PartName = firearm!.Parts.First(p => p.Id == id).Name })
+                    .ToList()
+            };
+            await Svc.LogCleaningAsync(log);
+            Nav.NavigateTo($"/maintenance/{FirearmId}");
+        }
+        catch (Exception ex)
+        {
+            errorMsg = $"Save failed: {ex.Message}";
+            saving = false;
+        }
+    }
+}

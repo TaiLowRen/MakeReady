@@ -1,0 +1,52 @@
+name: iOS build (unsigned)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List available Xcode versions
+        run: ls /Applications | grep Xcode
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install MAUI iOS workload
+        run: dotnet workload install maui-ios
+
+      - name: Build unsigned iOS app bundle
+        working-directory: src
+        run: >
+          dotnet build MakeReady.csproj
+          -f net9.0-ios
+          -c Release
+          -r ios-arm64
+          --self-contained
+          -p:CodesignKey=
+          -p:CodesignProvision=
+          -p:BuildIpa=false
+          -p:ArchiveOnBuild=false
+
+      - name: Find .app bundle
+        working-directory: src
+        run: find bin/Release/net9.0-ios -maxdepth 2 -name "*.app" -print
+
+      - name: Package into IPA
+        working-directory: src
+        run: |
+          APP_PATH=$(find bin/Release/net9.0-ios -maxdepth 2 -name "*.app" | head -1)
+          echo "App bundle: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r MakeReady-unsigned.ipa Payload
+          mv MakeReady-unsigned.ipa "$GITHUB_WORKSPACE/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MakeReady-unsigned-ipa
+          path: MakeReady-unsigned.ipa

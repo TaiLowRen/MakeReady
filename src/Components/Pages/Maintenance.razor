@@ -1,0 +1,136 @@
+@page "/maintenance"
+@inject MaintenanceService Svc
+@inject AlertService Alerts
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <div>
+        <div class="header-title">Maintenance</div>
+        <div class="header-subtitle">Cleaning schedules &amp; logs</div>
+    </div>
+    @if (overdueCount + dueSoonCount > 0)
+    {
+        <span class="maint-badge @(overdueCount > 0 ? "badge-overdue" : "badge-soon")">
+            @(overdueCount > 0 ? $"{overdueCount} Overdue" : $"{dueSoonCount} Due Soon")
+        </span>
+    }
+</div>
+
+<div class="page-body">
+    @if (loading)
+    {
+        <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+    }
+    else if (firearms.Count == 0)
+    {
+        <div class="empty-state" style="margin-top:48px;">
+            <i class="bi bi-tools"></i>
+            <p style="font-size:1rem; font-weight:600; color:var(--mr-text); margin-bottom:8px;">No firearms yet</p>
+            <p>Add a firearm first to set up maintenance schedules.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var category in new[] { FirearmCategory.Handgun, FirearmCategory.LongGun, FirearmCategory.Other })
+        {
+            var group = firearms.Where(f => f.Category == category).ToList();
+            if (group.Count == 0) continue;
+
+            <div class="section-label">
+                <i class="bi @(category == FirearmCategory.Handgun ? "bi-shield-fill" : category == FirearmCategory.LongGun ? "bi-crosshair" : "bi-three-dots") me-1"></i>
+                @(category == FirearmCategory.Handgun ? "Handguns" : category == FirearmCategory.LongGun ? "Long Guns" : "Other")
+            </div>
+
+            @foreach (var f in group)
+            {
+                var alert = alerts.FirstOrDefault(a => a.FirearmId == f.Id);
+                var status = alert?.Status ?? MaintenanceStatusLevel.OK;
+                var lastLog = f.MaintenanceLogs.OrderByDescending(l => l.Date).FirstOrDefault();
+
+                <div class="mr-card mr-card-pressable" @onclick='() => Nav.NavigateTo($"/maintenance/{f.Id}")'>
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Status indicator dot -->
+                        <div style="width:10px; height:10px; border-radius:50%; flex-shrink:0; background:@StatusColor(status);
+                                    box-shadow: 0 0 6px @StatusColor(status);"></div>
+
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-weight:700; font-size:0.95rem;">@f.DisplayName</div>
+                            <div style="font-size:0.78rem; color:var(--mr-text-muted); margin-top:1px;">
+                                @if (lastLog != null)
+                                {
+                                    <span>Last cleaned @lastLog.Date.ToLocalTime().ToString("MMM d, yyyy")</span>
+                                }
+                                else
+                                {
+                                    <span>Never cleaned</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div style="text-align:right; flex-shrink:0;">
+                            <div style="font-size:0.78rem; font-weight:600; color:@StatusColor(status);">
+                                @StatusLabel(status)
+                            </div>
+                            @if (alert != null)
+                            {
+                                <div style="font-size:0.7rem; color:var(--mr-text-muted); margin-top:1px;">@alert.Message</div>
+                            }
+                        </div>
+
+                        <i class="bi bi-chevron-right" style="color:var(--mr-text-muted); font-size:0.85rem;"></i>
+                    </div>
+
+                    @if (f.Parts.Count > 0)
+                    {
+                        var partAlerts = f.Parts.Select(p => Svc.GetPartAlert(f, p))
+                            .Where(pa => pa.Status != MaintenanceStatusLevel.OK).ToList();
+                        if (partAlerts.Count > 0)
+                        {
+                            <hr class="mr-divider" />
+                            <div style="font-size:0.75rem; color:var(--mr-text-muted);">
+                                <i class="bi bi-tools me-1"></i>
+                                @foreach (var pa in partAlerts)
+                                {
+                                    <span style="color:@StatusColor(pa.Status); margin-right:8px;">@pa.PartName</span>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    List<Firearm> firearms = new();
+    List<MaintenanceAlert> alerts = new();
+    bool loading = true;
+    int overdueCount;
+    int dueSoonCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        firearms = await Svc.GetFirearmsWithMaintenanceAsync();
+        alerts   = firearms.Select(Svc.GetFirearmAlert).ToList();
+        overdueCount = alerts.Count(a => a.Status == MaintenanceStatusLevel.Overdue);
+        dueSoonCount = alerts.Count(a => a.Status == MaintenanceStatusLevel.DueSoon);
+        Alerts.SetAlerts(alerts.Where(a => a.Status != MaintenanceStatusLevel.OK).ToList());
+        loading = false;
+    }
+
+    static string StatusColor(MaintenanceStatusLevel s) => s switch
+    {
+        MaintenanceStatusLevel.Overdue  => "var(--mr-red)",
+        MaintenanceStatusLevel.DueSoon  => "var(--mr-accent)",
+        _                               => "var(--mr-green)"
+    };
+
+    static string StatusLabel(MaintenanceStatusLevel s) => s switch
+    {
+        MaintenanceStatusLevel.Overdue  => "Overdue",
+        MaintenanceStatusLevel.DueSoon  => "Due Soon",
+        _                               => "OK"
+    };
+}

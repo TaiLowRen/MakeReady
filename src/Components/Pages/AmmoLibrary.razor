@@ -1,0 +1,202 @@
+@page "/ammo"
+@inject AmmoService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+@using MakeReady.Data
+
+<div class="app-header">
+    <div>
+        <div class="header-title">Ammo Library</div>
+        <div class="header-subtitle">Brands, grains &amp; types</div>
+    </div>
+</div>
+
+<div class="page-body">
+
+    @if (loading)
+    {
+        <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+    }
+    else
+    {
+        @if (ammos.Count == 0)
+        {
+            <div class="empty-state" style="margin-top:32px;">
+                <i class="bi bi-bullseye"></i>
+                <p style="font-size:1rem; font-weight:600; color:var(--mr-text); margin-bottom:8px;">No ammo added yet</p>
+                <p>Add your loads below — then select them when tracking sessions or logging malfunctions.</p>
+            </div>
+        }
+        else
+        {
+            <div class="section-label">Your Loads</div>
+            @foreach (var a in ammos)
+            {
+                var stats = statsMap.GetValueOrDefault(a.Id, new AmmoStats(0, 0, 0));
+                <div class="mr-card" style="margin-bottom:8px;">
+                    <div class="d-flex align-items-start gap-2">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-weight:700; font-size:0.95rem;">@a.Brand</div>
+                            <div style="font-size:0.82rem; color:var(--mr-text-muted); margin-top:1px;">
+                                @a.Grain gr &middot; @a.TypeLabel
+                                @if (!string.IsNullOrEmpty(a.Caliber))
+                                {
+                                    <span> &middot; @a.Caliber</span>
+                                }
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap mt-2">
+                                <span class="stat-badge">
+                                    <i class="bi bi-journals"></i>
+                                    <span>Sessions</span>
+                                    <span class="stat-val">@stats.Sessions</span>
+                                </span>
+                                @if (stats.TotalMalfunctions > 0)
+                                {
+                                    <span class="stat-badge">
+                                        <i class="bi bi-exclamation-triangle"></i>
+                                        <span>Malfunctions</span>
+                                        <span class="stat-val" style="color:var(--mr-red);">@stats.TotalMalfunctions</span>
+                                    </span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(a.Notes))
+                            {
+                                <div style="font-size:0.75rem; color:var(--mr-text-muted); margin-top:6px;">@a.Notes</div>
+                            }
+                        </div>
+                        <div class="d-flex flex-column gap-1">
+                            <button class="btn-icon" @onclick="() => StartEdit(a)" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn-icon danger" @onclick="() => DeleteAmmo(a.Id)" title="Delete">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <!-- Add / Edit form -->
+        <div class="mr-card" style="margin-top:16px; border-style:dashed; border-color:var(--mr-accent);">
+            <div class="section-label" style="margin-top:0;">
+                @(editId == null ? "Add Load" : "Edit Load")
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Brand</label>
+                <input class="form-control" @bind="fBrand" placeholder="e.g. Federal, Winchester, Hornady" />
+            </div>
+            <div class="d-flex gap-2 mb-3">
+                <div style="flex:1;">
+                    <label class="form-label">Caliber <span class="text-muted" style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                    <input class="form-control" @bind="fCaliber" placeholder="9mm, .45 ACP…" />
+                </div>
+                <div style="width:90px;">
+                    <label class="form-label">Grain</label>
+                    <input type="number" class="form-control" @bind="fGrain" min="1" max="999" placeholder="115" />
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Type</label>
+                <div class="filter-chip-group">
+                    @foreach (var t in Enum.GetValues<AmmoType>())
+                    {
+                        <button class="filter-chip @(fType == t ? "active" : "")"
+                                @onclick="() => fType = t">@TypeLabel(t)</button>
+                    }
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Notes <span class="text-muted" style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <input class="form-control" @bind="fNotes" placeholder="Velocity, lot number, intended use…" />
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn-mr-primary" style="flex:1;"
+                        @onclick="SaveAmmo" disabled="@(string.IsNullOrWhiteSpace(fBrand) || fGrain < 1)">
+                    <i class="bi bi-check-lg me-1"></i>@(editId == null ? "Add" : "Save")
+                </button>
+                @if (editId != null)
+                {
+                    <button class="btn-mr-secondary" @onclick="CancelEdit">Cancel</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    List<Ammo> ammos = new();
+    Dictionary<int, AmmoStats> statsMap = new();
+    bool loading = true;
+
+    int? editId;
+    string fBrand = "";
+    string fCaliber = "";
+    int fGrain = 0;
+    AmmoType fType = AmmoType.FMJ;
+    string fNotes = "";
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    async Task Reload()
+    {
+        ammos    = await Svc.GetAllAsync();
+        statsMap = await Svc.GetStatsMapAsync();
+        loading  = false;
+        StateHasChanged();
+    }
+
+    void StartEdit(Ammo a)
+    {
+        editId   = a.Id;
+        fBrand   = a.Brand;
+        fCaliber = a.Caliber ?? "";
+        fGrain   = a.Grain;
+        fType    = a.Type;
+        fNotes   = a.Notes ?? "";
+    }
+
+    void CancelEdit()
+    {
+        editId = null;
+        fBrand = ""; fCaliber = ""; fGrain = 0; fType = AmmoType.FMJ; fNotes = "";
+    }
+
+    async Task SaveAmmo()
+    {
+        if (string.IsNullOrWhiteSpace(fBrand) || fGrain < 1) return;
+        var ammo = new Ammo
+        {
+            Id      = editId ?? 0,
+            Brand   = fBrand.Trim(),
+            Caliber = string.IsNullOrWhiteSpace(fCaliber) ? null : fCaliber.Trim(),
+            Grain   = fGrain,
+            Type    = fType,
+            Notes   = string.IsNullOrWhiteSpace(fNotes) ? null : fNotes.Trim()
+        };
+        await Svc.SaveAsync(ammo);
+        CancelEdit();
+        await Reload();
+    }
+
+    async Task DeleteAmmo(int id)
+    {
+        await Svc.DeleteAsync(id);
+        await Reload();
+    }
+
+    static string TypeLabel(AmmoType t) => t switch
+    {
+        AmmoType.FMJ          => "FMJ",
+        AmmoType.HollowPoint  => "JHP",
+        AmmoType.FlatPoint    => "Flat Point",
+        AmmoType.SoftPoint    => "Soft Point",
+        AmmoType.FMJFlatPoint => "FMJ-FP",
+        AmmoType.Frangible    => "Frangible",
+        AmmoType.Subsonic     => "Subsonic",
+        AmmoType.MatchHP      => "Match HP",
+        AmmoType.Tracer       => "Tracer",
+        _                     => "Other"
+    };
+}

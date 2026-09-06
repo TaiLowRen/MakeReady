@@ -1,0 +1,127 @@
+@page "/"
+@implements IDisposable
+@inject FirearmService Svc
+@inject AlertService Alerts
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <div>
+        <div class="header-title">MakeReady</div>
+        <div class="header-subtitle">Round Count Tracker</div>
+    </div>
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo("/firearm/add")' title="Add firearm">
+        <i class="bi bi-plus-lg"></i>
+    </button>
+</div>
+
+<div class="page-body">
+    @if (Alerts.HasAlerts)
+    {
+        var isOverdue = Alerts.OverdueCount > 0;
+        <div class="home-alert-strip @(isOverdue ? "overdue" : "soon")"
+             @onclick='() => Nav.NavigateTo("/maintenance")'>
+            <i class="bi @(isOverdue ? "bi-exclamation-triangle-fill" : "bi-clock-fill")"></i>
+            <span>
+                @if (isOverdue)
+                {
+                    @($"{Alerts.OverdueCount} firearm{(Alerts.OverdueCount == 1 ? "" : "s")} overdue for cleaning")
+                }
+                else
+                {
+                    @($"{Alerts.DueSoonCount} firearm{(Alerts.DueSoonCount == 1 ? "" : "s")} due for cleaning soon")
+                }
+            </span>
+            <i class="bi bi-chevron-right ms-auto"></i>
+        </div>
+    }
+
+    @if (loading)
+    {
+        <div class="empty-state">
+            <i class="bi bi-hourglass-split"></i>
+            <p>Loading...</p>
+        </div>
+    }
+    else if (firearms.Count == 0)
+    {
+        <div class="empty-state" style="margin-top: 48px;">
+            <i class="bi bi-shield-plus"></i>
+            <p style="font-size:1rem; font-weight:600; color:var(--mr-text); margin-bottom:8px;">No firearms yet</p>
+            <p>Add your first firearm to start tracking rounds.</p>
+            <button class="btn-mr-primary" style="max-width:240px; margin-top:20px;" @onclick='() => Nav.NavigateTo("/firearm/add")'>
+                <i class="bi bi-plus-lg me-2"></i>Add Firearm
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="section-label">Your Firearms</div>
+        @foreach (var gun in firearms)
+        {
+            <div class="mr-card mr-card-pressable" @onclick='() => Nav.NavigateTo($"/firearm/{gun.Id}")'>
+                <div class="d-flex align-items-start justify-content-between">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:1.05rem; font-weight:700; color:var(--mr-text);">
+                            @gun.DisplayName
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(gun.Notes))
+                        {
+                            <div style="font-size:0.82rem; color:var(--mr-text-muted); margin-top:2px;">
+                                @gun.Notes
+                            </div>
+                        }
+                    </div>
+                    <i class="bi bi-chevron-right" style="color:var(--mr-text-muted); font-size:0.9rem; margin-left:8px;"></i>
+                </div>
+
+                <hr class="mr-divider" />
+
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="stat-badge">
+                        <i class="bi bi-bullseye"></i>
+                        <span>Total rounds</span>
+                        <span class="stat-val">@gun.TotalRoundsFired.ToString("N0")</span>
+                    </span>
+                    @if (gun.Sessions.Count > 0)
+                    {
+                        <span class="stat-badge">
+                            <i class="bi bi-calendar3"></i>
+                            <span>Sessions</span>
+                            <span class="stat-val">@gun.Sessions.Count</span>
+                        </span>
+                    }
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn-mr-primary" style="padding:10px 16px; font-size:0.85rem;"
+                            @onclick:stopPropagation="true"
+                            @onclick='() => Nav.NavigateTo($"/track/{gun.Id}")'>
+                        <i class="bi bi-crosshair2 me-1"></i> Track
+                    </button>
+                    <button class="btn-mr-secondary" style="padding:10px 16px; font-size:0.85rem;"
+                            @onclick:stopPropagation="true"
+                            @onclick='() => Nav.NavigateTo($"/firearm/{gun.Id}")'>
+                        <i class="bi bi-info-circle me-1"></i> Details
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    List<Firearm> firearms = new();
+    bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Alerts.OnAlertsChanged += OnAlertsChanged;
+        firearms = await Svc.GetFirearmsAsync();
+        loading = false;
+    }
+
+    void OnAlertsChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Alerts.OnAlertsChanged -= OnAlertsChanged;
+}
