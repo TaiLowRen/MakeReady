@@ -67,6 +67,10 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.9" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.6" />
         <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.6" />
+        <!-- Force a modern SQLitePCLRaw over whatever EF Core Sqlite pulls transitively
+             (was resolving to 2.1.10): older SQLitePCLRaw/e_sqlite3 native builds have
+             known iOS AOT/launch issues. -->
+        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     </ItemGroup>
 
 </Project>
