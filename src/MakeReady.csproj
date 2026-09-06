@@ -67,10 +67,11 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.9" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.6" />
         <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.6" />
-        <!-- Force a modern SQLitePCLRaw over whatever EF Core Sqlite pulls transitively
-             (was resolving to 2.1.10): older SQLitePCLRaw/e_sqlite3 native builds have
-             known iOS AOT/launch issues. -->
-        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+        <!-- bundle_e_sqlite3 (whether the transitive 2.1.10 or an explicitly pinned
+             3.0.5) either hangs the launch or throws DllNotFoundException for
+             e_sqlite3 on iOS. bundle_green is documented as the AOT-safe alternative
+             for iOS; it doesn't exist for SQLitePCLRaw 3.x, so pin the 2.1.x line. -->
+        <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.11" />
     </ItemGroup>
 
 </Project>
