@@ -45,7 +45,7 @@
              code ran. Binary comparison against a blank MAUI template (which launches
              fine) showed the real difference is raw AOT-compiled code size: MakeReady's
              __text section is 51.7MB vs 28.8MB for the blank app, from EF Core/Blazor/
-             SQLite -- code that's genuinely used, so trimming barely shrinks it. Since
+             SQLite: code that's genuinely used, so trimming barely shrinks it. Since
              this is a sideload (not App Store, where interpreted IL is disallowed),
              trade full AOT compilation for the Mono interpreter to shrink the
              compiled-code footprint dramatically. -->
