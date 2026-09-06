@@ -13,8 +13,23 @@ jobs:
         run: ls /Applications | grep Xcode
 
       - uses: actions/setup-dotnet@v4
+        id: setup-dotnet
         with:
           dotnet-version: '9.0.x'
+
+      - name: Pin SDK version (runner also ships a newer preinstalled SDK)
+        working-directory: src
+        run: |
+          cat > global.json <<EOF
+          {
+            "sdk": {
+              "version": "${{ steps.setup-dotnet.outputs.dotnet-version }}",
+              "rollForward": "latestFeature"
+            }
+          }
+          EOF
+          cat global.json
+          dotnet --version
 
       - name: Restore MAUI workloads
         working-directory: src
