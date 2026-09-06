@@ -33,7 +33,7 @@ jobs:
 
       - name: Install workloads pinned to the workload set matching Xcode 16.4
         working-directory: src
-        run: dotnet workload install ios android --version 9.0.302.0
+        run: dotnet workload install maui --version 9.0.302.0
 
       - name: Build unsigned iOS app bundle
         working-directory: src
