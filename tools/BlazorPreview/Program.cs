@@ -8,8 +8,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var dbPath = Path.Combine(AppContext.BaseDirectory, "makeready-preview.db");
-builder.Services.AddDbContextFactory<AppDbContext>(options =>
-    options.UseSqlite($"Data Source={dbPath}"));
+var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
+    .UseSqlite($"Data Source={dbPath}")
+    .Options;
+builder.Services.AddSingleton(dbOptions);
+builder.Services.AddSingleton<IDbContextFactory<AppDbContext>, DatabaseInitializer>();
 
 builder.Services.AddScoped<FirearmService>();
 builder.Services.AddScoped<HitFactorService>();
@@ -19,13 +22,6 @@ builder.Services.AddScoped<AmmoService>();
 builder.Services.AddSingleton<AlertService>();
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
-    using var db = dbFactory.CreateDbContext();
-    db.Database.EnsureCreated();
-}
 
 app.UseStaticFiles();
 app.UseAntiforgery();
