@@ -28,10 +28,10 @@ jobs:
       - name: Install workloads pinned to the workload set matching Xcode 16.4
         run: dotnet workload install maui --version 9.0.302.0
 
-      - name: Scaffold a blank MAUI app
+      - name: Scaffold a blank MAUI Blazor Hybrid app
         run: |
           dotnet new install Microsoft.Maui.Templates
-          dotnet new maui -n MinimalTest -o minimal-test
+          dotnet new maui-blazor -n MinimalTest -o minimal-test
 
       - name: Restrict to iOS only
         working-directory: minimal-test
