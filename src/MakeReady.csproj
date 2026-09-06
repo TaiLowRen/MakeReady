@@ -43,7 +43,7 @@
 
         <!-- iOS launch was hanging ~19s and getting watchdog-killed before any managed
              code ran; a crash report's vmSummary showed a 1.6GB __TEXT segment across
-             1143 separate regions -- dyld mapping an untrimmed, self-contained bundle
+             1143 separate regions: dyld mapping an untrimmed, self-contained bundle
              of the full BCL/MAUI/EF Core dependency graph. Force trimming explicitly. -->
         <PublishTrimmed Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">true</PublishTrimmed>
         <TrimMode Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">full</TrimMode>
