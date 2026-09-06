@@ -41,17 +41,6 @@
         <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
         <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'tizen'">6.5</SupportedOSPlatformVersion>
 
-        <!-- iOS launch was hanging ~19s and getting watchdog-killed before any managed
-             code ran. Binary comparison against a blank MAUI template (which launches
-             fine) showed the real difference is raw AOT-compiled code size: MakeReady's
-             __text section is 51.7MB vs 28.8MB for the blank app, from EF Core/Blazor/
-             SQLite: code that's genuinely used, so trimming barely shrinks it. Since
-             this is a sideload (not App Store, where interpreted IL is disallowed),
-             trade full AOT compilation for the Mono interpreter to shrink the
-             compiled-code footprint dramatically. -->
-        <PublishTrimmed Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">true</PublishTrimmed>
-        <TrimMode Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">full</TrimMode>
-        <UseInterpreter Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">true</UseInterpreter>
     </PropertyGroup>
 
     <ItemGroup>

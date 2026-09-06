@@ -58,6 +58,21 @@ public static class MauiProgram
             Checkpoint("after CreateScope");
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Checkpoint("after GetRequiredService<AppDbContext>");
+
+            // SQLite's WAL journal mode (which EF Core's SqliteDatabaseCreator enables
+            // by default when creating a new database) hangs on iOS's sandboxed
+            // filesystem -- it relies on shared-memory (-wal/-shm) files and locking
+            // semantics that don't behave reliably there. Force the traditional
+            // rollback journal before EnsureCreated() gets a chance to switch to WAL.
+            var conn = db.Database.GetDbConnection();
+            conn.Open();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA journal_mode=DELETE;";
+                cmd.ExecuteNonQuery();
+            }
+            Checkpoint("after forcing journal_mode=DELETE");
+
             db.Database.EnsureCreated();
             Checkpoint("after EnsureCreated");
             ApplySchemaUpdates(db);
