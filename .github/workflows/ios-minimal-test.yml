@@ -30,7 +30,7 @@ jobs:
 
       - name: Scaffold a blank MAUI app
         run: |
-          dotnet new install Microsoft.Maui.Templates --version 9.0.*
+          dotnet new install Microsoft.Maui.Templates
           dotnet new maui -n MinimalTest -o minimal-test
 
       - name: Restrict to iOS only
