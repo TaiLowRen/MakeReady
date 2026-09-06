@@ -77,12 +77,25 @@ public static class MauiProgram
     // managed exception either. Persist progress/exceptions to Documents
     // (exposed via UIFileSharingEnabled) so they can be pulled off-device
     // with afcclient --documents.
-    static void Checkpoint(string name)
+    // Environment.SpecialFolder.Personal is unreliable on .NET for iOS -- use the
+    // native API directly so this actually lands in the sandbox's real Documents
+    // directory (the one afcclient --documents / Finder file sharing exposes).
+    static string GetDocumentsDirectory()
+    {
+#if IOS || MACCATALYST
+        return Foundation.NSSearchPath.GetDirectories(
+            Foundation.NSSearchPathDirectory.DocumentDirectory,
+            Foundation.NSSearchPathDomain.User)[0];
+#else
+        return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+#endif
+    }
+
+    public static void Checkpoint(string name)
     {
         try
         {
-            var docs = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-            var path = Path.Combine(docs, "startup-progress.txt");
+            var path = Path.Combine(GetDocumentsDirectory(), "startup-progress.txt");
             var line = $"{DateTime.UtcNow:O} {name}\n";
             if (name == "start")
                 File.WriteAllText(path, line);
@@ -96,8 +109,7 @@ public static class MauiProgram
     {
         try
         {
-            var docs = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-            var path = Path.Combine(docs, "startup-crash.txt");
+            var path = Path.Combine(GetDocumentsDirectory(), "startup-crash.txt");
             File.WriteAllText(path, $"{DateTime.UtcNow:O}\n{ex}");
         }
         catch { /* best effort */ }
