@@ -43,7 +43,7 @@ jobs:
           -c Release
           -r ios-arm64
           --self-contained
-          -p:CodesignKey=
+          -p:CodesignKey=-
           -p:CodesignProvision=
           -p:BuildIpa=false
           -p:ArchiveOnBuild=false
