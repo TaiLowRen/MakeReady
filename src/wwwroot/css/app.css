@@ -589,6 +589,31 @@ textarea.form-control { resize: none; }
     50% { transform: scale(1.4); opacity: 0.5; }
 }
 
+.dryfire-safety-content { animation: dryfire-safety-fade 0.3s ease; }
+@keyframes dryfire-safety-fade {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.dryfire-safety-icon {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(212,160,23,0.12);
+    border: 2px solid var(--mr-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.75rem;
+    color: var(--mr-accent);
+    flex-shrink: 0;
+    animation: dryfire-safety-pop 0.35s ease;
+}
+@keyframes dryfire-safety-pop {
+    from { transform: scale(0.6); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
 /* ── Validation ──────────────────────────────────────── */
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--mr-green); }
 .invalid { outline: 1px solid var(--mr-red); }

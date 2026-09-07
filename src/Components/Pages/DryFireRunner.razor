@@ -49,8 +49,42 @@
                 </select>
             </div>
 
-            <button class="btn-mr-primary" style="padding:20px;" @onclick="StartRun">
+            <button class="btn-mr-primary" style="padding:20px;" @onclick="BeginSafetyCheck">
                 <i class="bi bi-play-fill me-2"></i>Start
+            </button>
+        </div>
+    }
+    else if (phase == RunPhase.Safety)
+    {
+        var step = safetySteps[safetyStepIndex];
+        <div style="padding:16px; display:flex; align-items:center; gap:12px;">
+            <button class="btn-icon" @onclick="SafetyBack">
+                <i class="bi bi-arrow-left"></i>
+            </button>
+            <div class="header-title" style="margin:0;">Safety Check</div>
+            <div style="font-size:0.75rem; color:var(--mr-text-muted);">@(safetyStepIndex + 1) / @safetySteps.Count</div>
+        </div>
+
+        <div class="dryfire-safety-content" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; gap:24px;" @key="safetyStepIndex">
+            <div class="dryfire-safety-icon">
+                <i class="bi @step.Icon"></i>
+            </div>
+            <div style="text-align:center;">
+                <div style="font-size:1.3rem; font-weight:800; margin-bottom:8px;">@step.Title</div>
+                <div style="font-size:0.9rem; color:var(--mr-text-muted); line-height:1.5;">@step.Body</div>
+            </div>
+        </div>
+
+        <div style="padding:16px 24px 24px; display:flex; flex-direction:column; gap:16px;">
+            <div style="display:flex; justify-content:center; gap:6px;">
+                @for (int i = 0; i < safetySteps.Count; i++)
+                {
+                    var dotFilled = i <= safetyStepIndex;
+                    <div style="width:8px; height:8px; border-radius:50%; background:@(dotFilled ? "var(--mr-accent)" : "var(--mr-border)");"></div>
+                }
+            </div>
+            <button class="btn-mr-primary" style="padding:18px;" @onclick="ConfirmSafetyStep">
+                <i class="bi bi-check-lg me-2"></i>@step.ConfirmLabel
             </button>
         </div>
     }
@@ -122,7 +156,26 @@
 @code {
     [Parameter] public int Id { get; set; }
 
-    enum RunPhase { Setup, Countdown, Running, Finished }
+    enum RunPhase { Setup, Safety, Countdown, Running, Finished }
+
+    record SafetyStep(string Icon, string Title, string Body, string ConfirmLabel);
+
+    static readonly List<SafetyStep> safetySteps = new()
+    {
+        new("bi-arrow-down-circle-fill", "Safe Direction",
+            "Point the muzzle in a safe direction -- one that would prevent injury or damage if the weapon discharged.",
+            "Muzzle Is Pointed Safely"),
+        new("bi-eye-fill", "Visual Check",
+            "Remove the magazine, lock the slide or bolt open, and visually confirm the chamber is empty.",
+            "Chamber Is Visually Clear"),
+        new("bi-hand-index-thumb-fill", "Physical Check",
+            "Feel inside the chamber and magazine well with your finger to confirm they're empty.",
+            "Chamber Is Physically Clear"),
+        new("bi-stack", "Check Magazines",
+            "Confirm every magazine you'll use is empty, or loaded only with snap caps / dummy rounds -- no live ammunition.",
+            "Magazines Are Clear"),
+    };
+    int safetyStepIndex = 0;
 
     Drill? drill;
     List<Firearm> firearms = new();
@@ -143,6 +196,30 @@
         drill = await Svc.GetDrillAsync(Id);
         firearms = await FirearmSvc.GetFirearmsAsync();
         loading = false;
+    }
+
+    void BeginSafetyCheck()
+    {
+        safetyStepIndex = 0;
+        phase = RunPhase.Safety;
+    }
+
+    void SafetyBack()
+    {
+        if (safetyStepIndex == 0) phase = RunPhase.Setup;
+        else safetyStepIndex--;
+    }
+
+    void ConfirmSafetyStep()
+    {
+        if (safetyStepIndex < safetySteps.Count - 1)
+        {
+            safetyStepIndex++;
+        }
+        else
+        {
+            _ = StartRun();
+        }
     }
 
     async Task StartRun()
