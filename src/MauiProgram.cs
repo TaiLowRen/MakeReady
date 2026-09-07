@@ -1,7 +1,5 @@
 using MakeReady.Data;
-using MakeReady.Data.CompiledModels;
 using MakeReady.Services;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace MakeReady;
@@ -20,13 +18,8 @@ public static class MauiProgram
 
         builder.Services.AddMauiBlazorWebView();
 
-        var dbPath = Path.Combine(FileSystem.AppDataDirectory, "makeready.db");
-        var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .UseModel(AppDbContextModel.Instance)
-            .Options;
-        builder.Services.AddSingleton(dbOptions);
-        builder.Services.AddSingleton<IDbContextFactory<AppDbContext>, DatabaseInitializer>();
+        var dataPath = Path.Combine(FileSystem.AppDataDirectory, "makeready-data.json");
+        builder.Services.AddSingleton(new JsonDataStore(dataPath));
 
         builder.Services.AddScoped<FirearmService>();
         builder.Services.AddScoped<HitFactorService>();
@@ -40,12 +33,6 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        var app = builder.Build();
-
-        // Kick off the (deferred, background) database initialization now so it
-        // starts as soon as possible, without blocking app launch on it.
-        _ = app.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
-
-        return app;
+        return builder.Build();
     }
 }

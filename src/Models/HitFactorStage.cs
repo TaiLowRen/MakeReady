@@ -1,10 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace MakeReady.Models;
 
 public class HitFactorStage
 {
     public int Id { get; set; }
     public int HitFactorSessionId { get; set; }
-    public HitFactorSession Session { get; set; } = null!;
+    [JsonIgnore] public HitFactorSession Session { get; set; } = null!;
 
     public string? StageName { get; set; }
 
@@ -21,12 +23,13 @@ public class HitFactorStage
     public double Time { get; set; }
 
     // Derived
-    public int ScoredPoints => (AHits * 5) + (CHits * 3) + (DHits * 1);
-    public int Penalties    => (Misses * 10) + (NoShoots * 10) + (Procedurals * 10);
-    public int NetPoints    => ScoredPoints - Penalties;
-    public int TotalHits    => AHits + CHits + DHits + Misses;
-    public double HitFactor => Time > 0 ? Math.Round(Math.Max(0d, NetPoints / Time), 4) : 0;
+    [JsonIgnore] public int ScoredPoints => (AHits * 5) + (CHits * 3) + (DHits * 1);
+    [JsonIgnore] public int Penalties    => (Misses * 10) + (NoShoots * 10) + (Procedurals * 10);
+    [JsonIgnore] public int NetPoints    => ScoredPoints - Penalties;
+    [JsonIgnore] public int TotalHits    => AHits + CHits + DHits + Misses;
+    [JsonIgnore] public double HitFactor => Time > 0 ? Math.Round(Math.Max(0d, NetPoints / Time), 4) : 0;
 
+    [JsonIgnore]
     public string HitFactorClass => HitFactor switch
     {
         >= 8  => "GM",
@@ -37,6 +40,7 @@ public class HitFactorStage
         _     => "D"
     };
 
+    [JsonIgnore]
     public string HitFactorColor => HitFactor switch
     {
         >= 8  => "#d4a017",

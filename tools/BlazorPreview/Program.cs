@@ -1,18 +1,13 @@
 using MakeReady.Data;
 using MakeReady.Services;
-using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-var dbPath = Path.Combine(AppContext.BaseDirectory, "makeready-preview.db");
-var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
-    .UseSqlite($"Data Source={dbPath}")
-    .Options;
-builder.Services.AddSingleton(dbOptions);
-builder.Services.AddSingleton<IDbContextFactory<AppDbContext>, DatabaseInitializer>();
+var dataPath = Path.Combine(AppContext.BaseDirectory, "makeready-preview-data.json");
+builder.Services.AddSingleton(new JsonDataStore(dataPath));
 
 builder.Services.AddScoped<FirearmService>();
 builder.Services.AddScoped<HitFactorService>();

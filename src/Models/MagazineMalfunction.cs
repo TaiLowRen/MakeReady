@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MakeReady.Models;
 
 public enum MalfunctionType
@@ -15,14 +17,15 @@ public class MagazineMalfunction
 {
     public int Id { get; set; }
     public int MagazineId { get; set; }
-    public Magazine Magazine { get; set; } = null!;
+    [JsonIgnore] public Magazine Magazine { get; set; } = null!;
     public MalfunctionType Type { get; set; }
     public DateTime Date { get; set; } = DateTime.UtcNow;
     public string? Notes { get; set; }
 
     public int? AmmoId { get; set; }
-    public Ammo? Ammo { get; set; }
+    [JsonIgnore] public Ammo? Ammo { get; set; }
 
+    [JsonIgnore]
     public string TypeLabel => Type switch
     {
         MalfunctionType.FailureToFeed   => "Failure to Feed",

@@ -1,57 +1,63 @@
 using MakeReady.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace MakeReady.Data;
 
-public class HitFactorService(IDbContextFactory<AppDbContext> factory)
+public class HitFactorService(JsonDataStore store)
 {
     public async Task<List<HitFactorSession>> GetSessionsAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.HitFactorSessions
-            .Include(s => s.Firearm)
-            .Include(s => s.Stages)
-            .OrderByDescending(s => s.Date)
-            .ToListAsync();
+        await store.ReadyAsync();
+        return store.HitFactorSessions.OrderByDescending(s => s.Date).ToList();
     }
 
     public async Task<HitFactorSession?> GetSessionAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.HitFactorSessions
-            .Include(s => s.Firearm)
-            .Include(s => s.Stages)
-            .FirstOrDefaultAsync(s => s.Id == id);
+        await store.ReadyAsync();
+        return store.HitFactorSessions.FirstOrDefault(s => s.Id == id);
     }
 
     public async Task<HitFactorSession> SaveSessionAsync(HitFactorSession session)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
         if (session.Id == 0)
-            db.HitFactorSessions.Add(session);
+        {
+            session.Id = store.NextId();
+            store.HitFactorSessions.Add(session);
+        }
         else
-            db.HitFactorSessions.Update(session);
-        await db.SaveChangesAsync();
+        {
+            var existing = store.HitFactorSessions.First(s => s.Id == session.Id);
+            existing.FirearmId = session.FirearmId;
+            existing.Name = session.Name;
+            existing.Date = session.Date;
+            existing.Location = session.Location;
+            existing.Notes = session.Notes;
+        }
+        await store.SaveAsync();
         return session;
     }
 
     public async Task DeleteSessionAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.HitFactorSessions.Where(s => s.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.HitFactorStages.RemoveAll(s => s.HitFactorSessionId == id);
+        store.HitFactorSessions.RemoveAll(s => s.Id == id);
+        await store.SaveAsync();
     }
 
     public async Task<HitFactorStage> AddStageAsync(HitFactorStage stage)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.HitFactorStages.Add(stage);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        stage.Id = store.NextId();
+        store.HitFactorStages.Add(stage);
+        await store.SaveAsync();
         return stage;
     }
 
     public async Task DeleteStageAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.HitFactorStages.Where(s => s.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.HitFactorStages.RemoveAll(s => s.Id == id);
+        await store.SaveAsync();
     }
 }

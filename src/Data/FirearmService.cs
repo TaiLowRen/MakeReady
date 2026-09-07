@@ -1,156 +1,190 @@
 using MakeReady.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace MakeReady.Data;
 
-public class FirearmService(IDbContextFactory<AppDbContext> factory)
+public class FirearmService(JsonDataStore store)
 {
     // Firearms
     public async Task<List<Firearm>> GetFirearmsAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Firearms
-            .Include(f => f.Sessions)
-            .OrderBy(f => f.Make).ThenBy(f => f.Model)
-            .ToListAsync();
+        await store.ReadyAsync();
+        return store.Firearms.OrderBy(f => f.Make).ThenBy(f => f.Model).ToList();
     }
 
     public async Task<Firearm?> GetFirearmAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Firearms
-            .Include(f => f.Modifications)
-            .Include(f => f.Magazines)
-            .Include(f => f.Sessions).ThenInclude(s => s.Magazine)
-            .Include(f => f.Sessions).ThenInclude(s => s.Ammo)
-            .Include(f => f.Malfunctions).ThenInclude(m => m.Ammo)
-            .FirstOrDefaultAsync(f => f.Id == id);
+        await store.ReadyAsync();
+        return store.Firearms.FirstOrDefault(f => f.Id == id);
     }
 
     public async Task<Firearm> SaveFirearmAsync(Firearm firearm)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
         if (firearm.Id == 0)
-            db.Firearms.Add(firearm);
+        {
+            firearm.Id = store.NextId();
+            store.Firearms.Add(firearm);
+        }
         else
-            db.Firearms.Update(firearm);
-        await db.SaveChangesAsync();
+        {
+            var existing = store.Firearms.First(f => f.Id == firearm.Id);
+            existing.Make = firearm.Make;
+            existing.Model = firearm.Model;
+            existing.Notes = firearm.Notes;
+            existing.Category = firearm.Category;
+        }
+        await store.SaveAsync();
         return firearm;
     }
 
     public async Task DeleteFirearmAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Firearms.Where(f => f.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        var magIds = store.Magazines.Where(m => m.FirearmId == id).Select(m => m.Id).ToHashSet();
+        store.MagazineModifications.RemoveAll(m => magIds.Contains(m.MagazineId));
+        store.MagazineMalfunctions.RemoveAll(m => magIds.Contains(m.MagazineId));
+        store.Magazines.RemoveAll(m => m.FirearmId == id);
+        store.Modifications.RemoveAll(m => m.FirearmId == id);
+        store.RoundSessions.RemoveAll(s => s.FirearmId == id);
+        store.FirearmMalfunctions.RemoveAll(m => m.FirearmId == id);
+        store.MaintenanceSchedules.RemoveAll(s => s.FirearmId == id);
+        store.MaintenanceParts.RemoveAll(p => p.FirearmId == id);
+        var logIds = store.MaintenanceLogs.Where(l => l.FirearmId == id).Select(l => l.Id).ToHashSet();
+        store.MaintenanceLogParts.RemoveAll(p => logIds.Contains(p.MaintenanceLogId));
+        store.MaintenanceLogs.RemoveAll(l => l.FirearmId == id);
+        foreach (var hf in store.HitFactorSessions.Where(h => h.FirearmId == id))
+            hf.FirearmId = null;
+        store.Firearms.RemoveAll(f => f.Id == id);
+        await store.SaveAsync();
     }
 
     // Modifications
     public async Task<Modification> AddModificationAsync(Modification mod)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.Modifications.Add(mod);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        mod.Id = store.NextId();
+        store.Modifications.Add(mod);
+        await store.SaveAsync();
         return mod;
     }
 
     public async Task DeleteModificationAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Modifications.Where(m => m.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.Modifications.RemoveAll(m => m.Id == id);
+        await store.SaveAsync();
     }
 
     // Magazines
     public async Task<Magazine?> GetMagazineAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Magazines
-            .Include(m => m.Modifications)
-            .Include(m => m.Malfunctions).ThenInclude(mf => mf.Ammo)
-            .FirstOrDefaultAsync(m => m.Id == id);
+        await store.ReadyAsync();
+        return store.Magazines.FirstOrDefault(m => m.Id == id);
     }
 
     public async Task<Magazine> SaveMagazineAsync(Magazine mag)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
         if (mag.Id == 0)
-            db.Magazines.Add(mag);
+        {
+            mag.Id = store.NextId();
+            store.Magazines.Add(mag);
+        }
         else
-            db.Magazines.Update(mag);
-        await db.SaveChangesAsync();
+        {
+            var existing = store.Magazines.First(m => m.Id == mag.Id);
+            existing.Label = mag.Label;
+            existing.Capacity = mag.Capacity;
+            existing.TotalRoundsFired = mag.TotalRoundsFired;
+        }
+        await store.SaveAsync();
         return mag;
     }
 
     public async Task DeleteMagazineAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Magazines.Where(m => m.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.MagazineModifications.RemoveAll(m => m.MagazineId == id);
+        store.MagazineMalfunctions.RemoveAll(m => m.MagazineId == id);
+        foreach (var s in store.RoundSessions.Where(s => s.MagazineId == id))
+            s.MagazineId = null;
+        store.Magazines.RemoveAll(m => m.Id == id);
+        await store.SaveAsync();
     }
 
     // Magazine Modifications
     public async Task<MagazineModification> AddMagazineModificationAsync(MagazineModification mod)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.MagazineModifications.Add(mod);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        mod.Id = store.NextId();
+        store.MagazineModifications.Add(mod);
+        await store.SaveAsync();
         return mod;
     }
 
     public async Task DeleteMagazineModificationAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.MagazineModifications.Where(m => m.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.MagazineModifications.RemoveAll(m => m.Id == id);
+        await store.SaveAsync();
     }
 
     // Magazine Malfunctions
     public async Task<MagazineMalfunction> AddMalfunctionAsync(MagazineMalfunction malfunction)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.MagazineMalfunctions.Add(malfunction);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        malfunction.Id = store.NextId();
+        store.MagazineMalfunctions.Add(malfunction);
+        await store.SaveAsync();
         return malfunction;
     }
 
     public async Task DeleteMalfunctionAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.MagazineMalfunctions.Where(m => m.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.MagazineMalfunctions.RemoveAll(m => m.Id == id);
+        await store.SaveAsync();
     }
 
     // Firearm Malfunctions
     public async Task<FirearmMalfunction> AddFirearmMalfunctionAsync(FirearmMalfunction malfunction)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.FirearmMalfunctions.Add(malfunction);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        malfunction.Id = store.NextId();
+        store.FirearmMalfunctions.Add(malfunction);
+        await store.SaveAsync();
         return malfunction;
     }
 
     public async Task DeleteFirearmMalfunctionAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.FirearmMalfunctions.Where(m => m.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.FirearmMalfunctions.RemoveAll(m => m.Id == id);
+        await store.SaveAsync();
     }
 
     // Sessions
     public async Task<RoundSession> LogSessionAsync(RoundSession session)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.RoundSessions.Add(session);
+        await store.ReadyAsync();
+        session.Id = store.NextId();
+        store.RoundSessions.Add(session);
 
         if (session.MagazineId.HasValue)
         {
-            var mag = await db.Magazines.FindAsync(session.MagazineId.Value);
+            var mag = store.Magazines.FirstOrDefault(m => m.Id == session.MagazineId.Value);
             if (mag != null)
                 mag.TotalRoundsFired += session.RoundsFired;
         }
 
-        await db.SaveChangesAsync();
+        await store.SaveAsync();
         return session;
     }
 
     public async Task DeleteSessionAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.RoundSessions.Where(s => s.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.RoundSessions.RemoveAll(s => s.Id == id);
+        await store.SaveAsync();
     }
 }

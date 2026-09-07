@@ -1,10 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace MakeReady.Models;
 
 public class MaintenancePart
 {
     public int Id { get; set; }
     public int FirearmId { get; set; }
-    public Firearm Firearm { get; set; } = null!;
+    [JsonIgnore] public Firearm Firearm { get; set; } = null!;
     public string Name { get; set; } = "";
     public string? Brand { get; set; }
     public int? IntervalDays { get; set; }

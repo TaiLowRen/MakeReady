@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MakeReady.Models;
 
 public enum AmmoType
@@ -23,6 +25,7 @@ public class Ammo
     public AmmoType Type { get; set; }
     public string? Notes { get; set; }
 
+    [JsonIgnore]
     public string TypeLabel => Type switch
     {
         AmmoType.FMJ          => "FMJ",
@@ -37,6 +40,6 @@ public class Ammo
         _                     => "Other"
     };
 
-    public string DisplayName => $"{Brand} {Grain}gr {TypeLabel}" + (Caliber != null ? $" ({Caliber})" : "");
-    public string ShortName   => $"{Brand} {Grain}gr {TypeLabel}";
+    [JsonIgnore] public string DisplayName => $"{Brand} {Grain}gr {TypeLabel}" + (Caliber != null ? $" ({Caliber})" : "");
+    [JsonIgnore] public string ShortName   => $"{Brand} {Grain}gr {TypeLabel}";
 }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MakeReady.Models;
 
 public class Firearm
@@ -10,16 +12,16 @@ public class Firearm
 
     public FirearmCategory Category { get; set; } = FirearmCategory.Handgun;
 
-    public List<Modification> Modifications { get; set; } = new();
-    public List<Magazine> Magazines { get; set; } = new();
-    public List<RoundSession> Sessions { get; set; } = new();
-    public List<FirearmMalfunction> Malfunctions { get; set; } = new();
-    public MaintenanceSchedule? Schedule { get; set; }
-    public List<MaintenancePart> Parts { get; set; } = new();
-    public List<MaintenanceLog> MaintenanceLogs { get; set; } = new();
+    [JsonIgnore] public List<Modification> Modifications { get; set; } = new();
+    [JsonIgnore] public List<Magazine> Magazines { get; set; } = new();
+    [JsonIgnore] public List<RoundSession> Sessions { get; set; } = new();
+    [JsonIgnore] public List<FirearmMalfunction> Malfunctions { get; set; } = new();
+    [JsonIgnore] public MaintenanceSchedule? Schedule { get; set; }
+    [JsonIgnore] public List<MaintenancePart> Parts { get; set; } = new();
+    [JsonIgnore] public List<MaintenanceLog> MaintenanceLogs { get; set; } = new();
 
-    public int TotalRoundsFired => Sessions.Sum(s => s.RoundsFired);
-    public string DisplayName => $"{Make} {Model}".Trim();
-    public double MalfunctionRate => TotalRoundsFired > 0 ? (double)Malfunctions.Count / TotalRoundsFired * 100 : 0;
-    public string CategoryLabel => Category == FirearmCategory.Handgun ? "Handgun" : Category == FirearmCategory.LongGun ? "Long Gun" : "Other";
+    [JsonIgnore] public int TotalRoundsFired => Sessions.Sum(s => s.RoundsFired);
+    [JsonIgnore] public string DisplayName => $"{Make} {Model}".Trim();
+    [JsonIgnore] public double MalfunctionRate => TotalRoundsFired > 0 ? (double)Malfunctions.Count / TotalRoundsFired * 100 : 0;
+    [JsonIgnore] public string CategoryLabel => Category == FirearmCategory.Handgun ? "Handgun" : Category == FirearmCategory.LongGun ? "Long Gun" : "Other";
 }

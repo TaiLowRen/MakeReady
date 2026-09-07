@@ -1,5 +1,4 @@
 using MakeReady.Models;
-using Microsoft.EntityFrameworkCore;
 using System.Text;
 
 namespace MakeReady.Data;
@@ -35,26 +34,26 @@ public record ExportData(
     public int TotalMalfunctions => FirearmMalfunctions.Count + MagMalfunctions.Count;
 }
 
-public class ExportService(IDbContextFactory<AppDbContext> factory)
+public class ExportService(JsonDataStore store)
 {
     public async Task<List<Firearm>> GetAllFirearmsAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Firearms.OrderBy(f => f.Make).ThenBy(f => f.Model).ToListAsync();
+        await store.ReadyAsync();
+        return store.Firearms.OrderBy(f => f.Make).ThenBy(f => f.Model).ToList();
     }
 
     public async Task<ExportData> GetDataAsync(ExportFilter filter, ExportSections sections)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
 
         bool hasFirearmFilter = (filter.Categories?.Count ?? 0) > 0 || (filter.FirearmIds?.Count ?? 0) > 0;
 
-        var firearmsQ = db.Firearms.AsQueryable();
+        var firearmsQ = store.Firearms.AsEnumerable();
         if (filter.Categories?.Count > 0)
             firearmsQ = firearmsQ.Where(f => filter.Categories.Contains(f.Category));
         if (filter.FirearmIds?.Count > 0)
             firearmsQ = firearmsQ.Where(f => filter.FirearmIds.Contains(f.Id));
-        var firearms = await firearmsQ.OrderBy(f => f.Make).ToListAsync();
+        var firearms = firearmsQ.OrderBy(f => f.Make).ToList();
         var ids = firearms.Select(f => f.Id).ToHashSet();
 
         DateTime? fromUtc = filter.FromDate.HasValue ? DateTime.SpecifyKind(filter.FromDate.Value, DateTimeKind.Local).ToUniversalTime() : null;
@@ -64,60 +63,60 @@ public class ExportService(IDbContextFactory<AppDbContext> factory)
         List<RoundSession> sessions = new();
         if (sections.RoundSessions)
         {
-            var q = db.RoundSessions.Include(s => s.Firearm).Include(s => s.Magazine).AsQueryable();
+            var q = store.RoundSessions.AsEnumerable();
             if (hasFirearmFilter) q = q.Where(s => ids.Contains(s.FirearmId));
             if (fromUtc.HasValue) q = q.Where(s => s.Date >= fromUtc.Value);
             if (toUtc.HasValue)   q = q.Where(s => s.Date <= toUtc.Value);
             if (filter.MinRounds.HasValue) q = q.Where(s => s.RoundsFired >= filter.MinRounds.Value);
             if (filter.MaxRounds.HasValue) q = q.Where(s => s.RoundsFired <= filter.MaxRounds.Value);
-            sessions = await q.OrderBy(s => s.Date).ToListAsync();
+            sessions = q.OrderBy(s => s.Date).ToList();
         }
 
         // Firearm malfunctions
         List<FirearmMalfunction> fireMal = new();
         if (sections.Malfunctions)
         {
-            var q = db.FirearmMalfunctions.Include(m => m.Firearm).AsQueryable();
+            var q = store.FirearmMalfunctions.AsEnumerable();
             if (hasFirearmFilter) q = q.Where(m => ids.Contains(m.FirearmId));
             if (fromUtc.HasValue) q = q.Where(m => m.Date >= fromUtc.Value);
             if (toUtc.HasValue)   q = q.Where(m => m.Date <= toUtc.Value);
-            fireMal = await q.OrderBy(m => m.Date).ToListAsync();
+            fireMal = q.OrderBy(m => m.Date).ToList();
         }
 
         // Magazine malfunctions
         List<MagazineMalfunction> magMal = new();
         if (sections.Malfunctions)
         {
-            var q = db.MagazineMalfunctions.Include(m => m.Magazine).ThenInclude(m => m.Firearm).AsQueryable();
+            var q = store.MagazineMalfunctions.AsEnumerable();
             if (hasFirearmFilter) q = q.Where(m => ids.Contains(m.Magazine.FirearmId));
             if (fromUtc.HasValue) q = q.Where(m => m.Date >= fromUtc.Value);
             if (toUtc.HasValue)   q = q.Where(m => m.Date <= toUtc.Value);
-            magMal = await q.OrderBy(m => m.Date).ToListAsync();
+            magMal = q.OrderBy(m => m.Date).ToList();
         }
 
         // Hit factor
         List<HitFactorSession> hfSessions = new();
         if (sections.HitFactor)
         {
-            var all = await db.HitFactorSessions.Include(s => s.Stages).Include(s => s.Firearm).OrderBy(s => s.Date).ToListAsync();
-            if (hasFirearmFilter) all = all.Where(s => s.FirearmId == null || ids.Contains(s.FirearmId.Value)).ToList();
-            if (fromUtc.HasValue) all = all.Where(s => s.Date >= fromUtc.Value).ToList();
-            if (toUtc.HasValue)   all = all.Where(s => s.Date <= toUtc.Value).ToList();
-            hfSessions = all;
+            var all = store.HitFactorSessions.OrderBy(s => s.Date).AsEnumerable();
+            if (hasFirearmFilter) all = all.Where(s => s.FirearmId == null || ids.Contains(s.FirearmId.Value));
+            if (fromUtc.HasValue) all = all.Where(s => s.Date >= fromUtc.Value);
+            if (toUtc.HasValue)   all = all.Where(s => s.Date <= toUtc.Value);
+            hfSessions = all.ToList();
         }
 
         // Maintenance
         List<MaintenanceLog> maintLogs = new();
         if (sections.Maintenance)
         {
-            var q = db.MaintenanceLogs.Include(l => l.CleanedParts).Include(l => l.Firearm).AsQueryable();
+            var q = store.MaintenanceLogs.AsEnumerable();
             if (hasFirearmFilter) q = q.Where(l => ids.Contains(l.FirearmId));
             if (fromUtc.HasValue) q = q.Where(l => l.Date >= fromUtc.Value);
             if (toUtc.HasValue)   q = q.Where(l => l.Date <= toUtc.Value);
-            maintLogs = await q.OrderBy(l => l.Date).ToListAsync();
+            maintLogs = q.OrderBy(l => l.Date).ToList();
         }
 
-        return new(firearms.Count > 0 ? firearms : await db.Firearms.OrderBy(f => f.Make).ToListAsync(),
+        return new(firearms.Count > 0 ? firearms : store.Firearms.OrderBy(f => f.Make).ToList(),
                    sessions, fireMal, magMal, hfSessions, maintLogs);
     }
 

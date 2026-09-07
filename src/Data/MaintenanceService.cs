@@ -1,9 +1,8 @@
 using MakeReady.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace MakeReady.Data;
 
-public class MaintenanceService(IDbContextFactory<AppDbContext> factory)
+public class MaintenanceService(JsonDataStore store)
 {
     private const int OverdueDays       = 90;
     private const int DueSoonDays       = 15;
@@ -12,79 +11,93 @@ public class MaintenanceService(IDbContextFactory<AppDbContext> factory)
     // ── Firearm query ────────────────────────────────────────────
     public async Task<List<Firearm>> GetFirearmsWithMaintenanceAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Firearms
-            .Include(f => f.Schedule)
-            .Include(f => f.Parts)
-            .Include(f => f.Sessions)
-            .Include(f => f.MaintenanceLogs).ThenInclude(l => l.CleanedParts)
-            .OrderBy(f => f.Make).ThenBy(f => f.Model)
-            .ToListAsync();
+        await store.ReadyAsync();
+        return store.Firearms.OrderBy(f => f.Make).ThenBy(f => f.Model).ToList();
     }
 
     public async Task<Firearm?> GetFirearmDetailAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Firearms
-            .Include(f => f.Schedule)
-            .Include(f => f.Parts)
-            .Include(f => f.Sessions)
-            .Include(f => f.MaintenanceLogs).ThenInclude(l => l.CleanedParts)
-            .FirstOrDefaultAsync(f => f.Id == id);
+        await store.ReadyAsync();
+        return store.Firearms.FirstOrDefault(f => f.Id == id);
     }
 
     // ── Schedule ─────────────────────────────────────────────────
     public async Task SaveScheduleAsync(MaintenanceSchedule schedule)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        var existing = await db.MaintenanceSchedules.FirstOrDefaultAsync(s => s.FirearmId == schedule.FirearmId);
+        await store.ReadyAsync();
+        var existing = store.MaintenanceSchedules.FirstOrDefault(s => s.FirearmId == schedule.FirearmId);
         if (existing == null)
-            db.MaintenanceSchedules.Add(schedule);
+        {
+            schedule.Id = store.NextId();
+            store.MaintenanceSchedules.Add(schedule);
+        }
         else
         {
-            existing.IntervalDays          = schedule.IntervalDays;
-            existing.NotificationsEnabled  = schedule.NotificationsEnabled;
+            existing.IntervalDays = schedule.IntervalDays;
+            existing.NotificationsEnabled = schedule.NotificationsEnabled;
         }
-        await db.SaveChangesAsync();
+        await store.SaveAsync();
     }
 
     public async Task DeleteScheduleAsync(int firearmId)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.MaintenanceSchedules.Where(s => s.FirearmId == firearmId).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.MaintenanceSchedules.RemoveAll(s => s.FirearmId == firearmId);
+        await store.SaveAsync();
     }
 
     // ── Parts ─────────────────────────────────────────────────────
     public async Task<MaintenancePart> SavePartAsync(MaintenancePart part)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
         if (part.Id == 0)
-            db.MaintenanceParts.Add(part);
+        {
+            part.Id = store.NextId();
+            store.MaintenanceParts.Add(part);
+        }
         else
-            db.MaintenanceParts.Update(part);
-        await db.SaveChangesAsync();
+        {
+            var existing = store.MaintenanceParts.First(p => p.Id == part.Id);
+            existing.Name = part.Name;
+            existing.Brand = part.Brand;
+            existing.IntervalDays = part.IntervalDays;
+            existing.NotificationsEnabled = part.NotificationsEnabled;
+        }
+        await store.SaveAsync();
         return part;
     }
 
     public async Task DeletePartAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.MaintenanceParts.Where(p => p.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        foreach (var p in store.MaintenanceLogParts.Where(p => p.MaintenancePartId == id))
+            p.MaintenancePartId = null;
+        store.MaintenanceParts.RemoveAll(p => p.Id == id);
+        await store.SaveAsync();
     }
 
     // ── Logs ──────────────────────────────────────────────────────
     public async Task<MaintenanceLog> LogCleaningAsync(MaintenanceLog log)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.MaintenanceLogs.Add(log);
-        await db.SaveChangesAsync();
+        await store.ReadyAsync();
+        log.Id = store.NextId();
+        store.MaintenanceLogs.Add(log);
+        foreach (var part in log.CleanedParts)
+        {
+            part.Id = store.NextId();
+            part.MaintenanceLogId = log.Id;
+            store.MaintenanceLogParts.Add(part);
+        }
+        await store.SaveAsync();
         return log;
     }
 
     public async Task DeleteLogAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.MaintenanceLogs.Where(l => l.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        store.MaintenanceLogParts.RemoveAll(p => p.MaintenanceLogId == id);
+        store.MaintenanceLogs.RemoveAll(l => l.Id == id);
+        await store.SaveAsync();
     }
 
     // ── Status computation ────────────────────────────────────────

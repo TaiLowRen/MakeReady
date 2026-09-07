@@ -1,5 +1,4 @@
 using MakeReady.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace MakeReady.Data;
 
@@ -8,56 +7,63 @@ public record AmmoStats(int Sessions, int FirearmMalfunctions, int MagMalfunctio
     public int TotalMalfunctions => FirearmMalfunctions + MagMalfunctions;
 }
 
-public class AmmoService(IDbContextFactory<AppDbContext> factory)
+public class AmmoService(JsonDataStore store)
 {
     public async Task<List<Ammo>> GetAllAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Ammos.OrderBy(a => a.Brand).ThenBy(a => a.Grain).ToListAsync();
+        await store.ReadyAsync();
+        return store.Ammos.OrderBy(a => a.Brand).ThenBy(a => a.Grain).ToList();
     }
 
     public async Task<Ammo> SaveAsync(Ammo ammo)
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
         if (ammo.Id == 0)
-            db.Ammos.Add(ammo);
+        {
+            ammo.Id = store.NextId();
+            store.Ammos.Add(ammo);
+        }
         else
-            db.Ammos.Update(ammo);
-        await db.SaveChangesAsync();
+        {
+            var existing = store.Ammos.First(a => a.Id == ammo.Id);
+            existing.Brand = ammo.Brand;
+            existing.Caliber = ammo.Caliber;
+            existing.Grain = ammo.Grain;
+            existing.Type = ammo.Type;
+            existing.Notes = ammo.Notes;
+        }
+        await store.SaveAsync();
         return ammo;
     }
 
     public async Task DeleteAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Ammos.Where(a => a.Id == id).ExecuteDeleteAsync();
+        await store.ReadyAsync();
+        foreach (var s in store.RoundSessions.Where(s => s.AmmoId == id)) s.AmmoId = null;
+        foreach (var m in store.FirearmMalfunctions.Where(m => m.AmmoId == id)) m.AmmoId = null;
+        foreach (var m in store.MagazineMalfunctions.Where(m => m.AmmoId == id)) m.AmmoId = null;
+        store.Ammos.RemoveAll(a => a.Id == id);
+        await store.SaveAsync();
     }
 
     public async Task<Dictionary<int, AmmoStats>> GetStatsMapAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
+        await store.ReadyAsync();
 
-        var sessions = await db.RoundSessions
+        var sessionMap = store.RoundSessions
             .Where(s => s.AmmoId != null)
             .GroupBy(s => s.AmmoId!.Value)
-            .Select(g => new { AmmoId = g.Key, Count = g.Count() })
-            .ToListAsync();
+            .ToDictionary(g => g.Key, g => g.Count());
 
-        var fireMal = await db.FirearmMalfunctions
+        var fireMalMap = store.FirearmMalfunctions
             .Where(m => m.AmmoId != null)
             .GroupBy(m => m.AmmoId!.Value)
-            .Select(g => new { AmmoId = g.Key, Count = g.Count() })
-            .ToListAsync();
+            .ToDictionary(g => g.Key, g => g.Count());
 
-        var magMal = await db.MagazineMalfunctions
+        var magMalMap = store.MagazineMalfunctions
             .Where(m => m.AmmoId != null)
             .GroupBy(m => m.AmmoId!.Value)
-            .Select(g => new { AmmoId = g.Key, Count = g.Count() })
-            .ToListAsync();
-
-        var sessionMap  = sessions.ToDictionary(x => x.AmmoId, x => x.Count);
-        var fireMalMap  = fireMal.ToDictionary(x => x.AmmoId, x => x.Count);
-        var magMalMap   = magMal.ToDictionary(x => x.AmmoId, x => x.Count);
+            .ToDictionary(g => g.Key, g => g.Count());
 
         var allIds = sessionMap.Keys.Union(fireMalMap.Keys).Union(magMalMap.Keys).ToHashSet();
         return allIds.ToDictionary(
