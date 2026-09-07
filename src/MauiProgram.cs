@@ -26,6 +26,7 @@ public static class MauiProgram
         builder.Services.AddScoped<MaintenanceService>();
         builder.Services.AddScoped<ExportService>();
         builder.Services.AddScoped<AmmoService>();
+        builder.Services.AddScoped<DrillService>();
         builder.Services.AddSingleton<AlertService>();
         builder.Services.AddSingleton<NavDrawerState>();
 

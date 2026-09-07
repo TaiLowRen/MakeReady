@@ -1,0 +1,277 @@
+@page "/dryfire/new"
+@page "/dryfire/{Id:int}/edit"
+@inject DrillService Svc
+@inject NavigationManager Nav
+@using MakeReady.Models
+
+<div class="app-header">
+    <button class="btn-icon" @onclick='() => Nav.NavigateTo("/dryfire")'>
+        <i class="bi bi-arrow-left"></i>
+    </button>
+    <div class="header-title">@(Id.HasValue ? "Edit Drill" : "New Drill")</div>
+    @if (Id.HasValue)
+    {
+        <button class="btn-icon danger" @onclick="DeleteDrill" title="Delete drill">
+            <i class="bi bi-trash3"></i>
+        </button>
+    }
+</div>
+
+@if (loading)
+{
+    <div class="empty-state"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+}
+else
+{
+    <div class="page-body">
+        <div class="mb-3">
+            <label class="form-label">Drill Name</label>
+            <input class="form-control" @bind="name" placeholder="e.g. Draw &amp; Move" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Notes <span class="text-muted" style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+            <input class="form-control" @bind="notes" placeholder="What this drill works on" />
+        </div>
+
+        <div class="section-label">Start Signal</div>
+        <div class="mr-card" style="margin-bottom:16px;">
+            <div class="d-flex gap-2 mb-2">
+                <div style="flex:1;">
+                    <label class="form-label">Random Delay Min (s)</label>
+                    <input type="number" class="form-control" step="0.1" min="0" @bind="delayMin" />
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label">Random Delay Max (s)</label>
+                    <input type="number" class="form-control" step="0.1" min="0" @bind="delayMax" />
+                </div>
+            </div>
+            <div style="font-size:0.72rem; color:var(--mr-text-muted);">
+                A beep fires at a random point between these two values, like a shot timer.
+            </div>
+        </div>
+
+        <div class="section-label">Par Time</div>
+        <div class="mr-card" style="margin-bottom:16px;">
+            <label class="d-flex align-items-center gap-2 mb-2" style="cursor:pointer;">
+                <input type="checkbox" @bind="useParTime" style="width:18px; height:18px;" />
+                <span style="font-size:0.9rem; font-weight:600;">Play an end beep at a par time</span>
+            </label>
+            @if (useParTime)
+            {
+                <input type="number" class="form-control" step="0.1" min="0.1" @bind="parTime" placeholder="Seconds" />
+            }
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between" style="margin-bottom:10px;">
+            <div class="section-label" style="margin:0;">Targets</div>
+            <button class="btn-icon" style="color:var(--mr-accent);" @onclick="AddTarget" title="Add target">
+                <i class="bi bi-plus-circle-fill" style="font-size:1.4rem;"></i>
+            </button>
+        </div>
+
+        @if (targets.Count == 0)
+        {
+            <div class="empty-state" style="padding:24px;">
+                <i class="bi bi-bullseye"></i>
+                <p>No targets yet. Add one to build the sequence.</p>
+            </div>
+        }
+        else
+        {
+            <!-- Layout preview -->
+            <div style="position:relative; width:100%; aspect-ratio:9/16; max-height:220px; background:var(--mr-surface-2); border:1px dashed var(--mr-border); border-radius:10px; margin-bottom:16px; overflow:hidden;">
+                @foreach (var (t, i) in targets.Select((t, i) => (t, i)))
+                {
+                    <div style="position:absolute; left:@(StartX(t))%; top:@(StartY(t))%; transform:translate(-50%,-50%);
+                                width:@(Math.Max(t.SizePercent,8))%; aspect-ratio:1; border-radius:@(t.Shape == TargetShape.Circle ? "50%" : "4px");
+                                background:rgba(212,160,23,0.25); border:1px solid var(--mr-accent);
+                                display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:700; color:var(--mr-accent);">
+                        @(i + 1)
+                    </div>
+                }
+            </div>
+
+            @for (int idx = 0; idx < targets.Count; idx++)
+            {
+                var t = targets[idx];
+                var num = idx + 1;
+                <div class="mr-card" style="margin-bottom:10px;">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div style="font-weight:700; font-size:0.85rem;">Target @num</div>
+                        <button class="btn-icon danger" @onclick="() => RemoveTarget(t)" title="Remove">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Shape</label>
+                        <div class="filter-chip-group">
+                            @foreach (var s in Enum.GetValues<TargetShape>())
+                            {
+                                <button class="filter-chip @(t.Shape == s ? "active" : "")" @onclick="() => t.Shape = s">@ShapeLabel(s)</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Movement</label>
+                        <div class="filter-chip-group">
+                            @foreach (var m in Enum.GetValues<TargetMovement>())
+                            {
+                                <button class="filter-chip @(t.Movement == m ? "active" : "")" @onclick="() => t.Movement = m">@MovementLabel(m)</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mb-2">
+                        <div style="flex:1;">
+                            <label class="form-label">Size (%)</label>
+                            <input type="number" class="form-control" min="4" max="80" @bind="t.SizePercent" />
+                        </div>
+                        @if (t.Movement is TargetMovement.Static or TargetMovement.LeftToRight or TargetMovement.RightToLeft)
+                        {
+                            <div style="flex:1;">
+                                <label class="form-label">Row (Y %)</label>
+                                <input type="number" class="form-control" min="0" max="100" @bind="t.PositionYPercent" />
+                            </div>
+                        }
+                        @if (t.Movement is TargetMovement.Static or TargetMovement.TopToBottom or TargetMovement.BottomToTop)
+                        {
+                            <div style="flex:1;">
+                                <label class="form-label">Column (X %)</label>
+                                <input type="number" class="form-control" min="0" max="100" @bind="t.PositionXPercent" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <div style="flex:1;">
+                            <label class="form-label">Appears At (s)</label>
+                            <input type="number" class="form-control" step="0.1" min="0" @bind="t.AppearAtSeconds" />
+                        </div>
+                        <div style="flex:1;">
+                            <label class="form-label">Duration (s)</label>
+                            <input type="number" class="form-control" step="0.1" min="0.1" @bind="t.DurationSeconds" />
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <button class="btn-mr-primary mt-3" @onclick="Save" disabled="@(string.IsNullOrWhiteSpace(name) || saving)">
+            @(saving ? "Saving..." : "Save Drill")
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    bool loading = true;
+    bool saving = false;
+
+    string name = "";
+    string notes = "";
+    double delayMin = 1.0;
+    double delayMax = 3.0;
+    bool useParTime = false;
+    double parTime = 5.0;
+    List<DrillTarget> targets = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            var drill = await Svc.GetDrillAsync(Id.Value);
+            if (drill != null)
+            {
+                name = drill.Name;
+                notes = drill.Notes ?? "";
+                delayMin = drill.RandomDelayMinSeconds;
+                delayMax = drill.RandomDelayMaxSeconds;
+                useParTime = drill.ParTimeSeconds.HasValue;
+                parTime = drill.ParTimeSeconds ?? 5.0;
+                targets = drill.Targets
+                    .OrderBy(t => t.OrderIndex)
+                    .Select(t => new DrillTarget
+                    {
+                        Id = t.Id,
+                        DrillId = t.DrillId,
+                        Shape = t.Shape,
+                        Movement = t.Movement,
+                        SizePercent = t.SizePercent,
+                        PositionXPercent = t.PositionXPercent,
+                        PositionYPercent = t.PositionYPercent,
+                        AppearAtSeconds = t.AppearAtSeconds,
+                        DurationSeconds = t.DurationSeconds
+                    })
+                    .ToList();
+            }
+        }
+        loading = false;
+    }
+
+    void AddTarget()
+    {
+        var appearAt = targets.Count == 0 ? 0 : targets.Max(t => t.AppearAtSeconds + t.DurationSeconds);
+        targets.Add(new DrillTarget { AppearAtSeconds = appearAt, DurationSeconds = 2 });
+    }
+
+    void RemoveTarget(DrillTarget t) => targets.Remove(t);
+
+    double StartX(DrillTarget t) => t.Movement switch
+    {
+        TargetMovement.LeftToRight => 0,
+        TargetMovement.RightToLeft => 100,
+        _ => t.PositionXPercent
+    };
+
+    double StartY(DrillTarget t) => t.Movement switch
+    {
+        TargetMovement.TopToBottom => 0,
+        TargetMovement.BottomToTop => 100,
+        _ => t.PositionYPercent
+    };
+
+    static string ShapeLabel(TargetShape s) => s switch
+    {
+        TargetShape.Circle => "Circle",
+        TargetShape.Square => "Square",
+        _ => "Silhouette"
+    };
+
+    static string MovementLabel(TargetMovement m) => m switch
+    {
+        TargetMovement.LeftToRight => "Left → Right",
+        TargetMovement.RightToLeft => "Right → Left",
+        TargetMovement.TopToBottom => "Top → Bottom",
+        TargetMovement.BottomToTop => "Bottom → Top",
+        _ => "Static"
+    };
+
+    async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        saving = true;
+
+        var drill = new Drill
+        {
+            Id = Id ?? 0,
+            Name = name.Trim(),
+            Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
+            RandomDelayMinSeconds = delayMin,
+            RandomDelayMaxSeconds = Math.Max(delayMin, delayMax),
+            ParTimeSeconds = useParTime ? parTime : null
+        };
+
+        await Svc.SaveDrillAsync(drill, targets);
+        Nav.NavigateTo("/dryfire");
+    }
+
+    async Task DeleteDrill()
+    {
+        if (!Id.HasValue) return;
+        await Svc.DeleteDrillAsync(Id.Value);
+        Nav.NavigateTo("/dryfire");
+    }
+}

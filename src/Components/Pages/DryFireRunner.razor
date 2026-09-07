@@ -1,0 +1,266 @@
+@page "/dryfire/{Id:int}/run"
+@implements IDisposable
+@inject DrillService Svc
+@inject FirearmService FirearmSvc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using MakeReady.Models
+@using Microsoft.JSInterop
+
+<div style="position:fixed; inset:0; z-index:2000; background:#05070a; color:var(--mr-text); display:flex; flex-direction:column;">
+
+    @if (loading)
+    {
+        <div class="empty-state" style="margin:auto;"><i class="bi bi-hourglass-split"></i><p>Loading...</p></div>
+    }
+    else if (drill == null)
+    {
+        <div class="empty-state" style="margin:auto;"><p>Drill not found.</p></div>
+    }
+    else if (phase == RunPhase.Setup)
+    {
+        <div style="padding:16px; display:flex; align-items:center; gap:12px;">
+            <button class="btn-icon" @onclick='() => Nav.NavigateTo("/dryfire")'>
+                <i class="bi bi-arrow-left"></i>
+            </button>
+            <div class="header-title" style="margin:0;">@drill.Name</div>
+        </div>
+
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:24px; gap:20px;">
+            <div style="text-align:center;">
+                <i class="bi bi-stopwatch" style="font-size:3rem; color:var(--mr-accent);"></i>
+                <div style="margin-top:12px; font-size:0.85rem; color:var(--mr-text-muted);">
+                    Random start beep in @drill.RandomDelayMinSeconds.ToString("0.0")–@drill.RandomDelayMaxSeconds.ToString("0.0")s
+                    @if (drill.ParTimeSeconds is double par)
+                    { <span> &middot; Par @par.ToString("0.0")s</span> }
+                    @if (drill.Targets.Count > 0)
+                    { <span> &middot; @drill.Targets.Count target(s)</span> }
+                </div>
+            </div>
+
+            <div>
+                <label class="form-label">Firearm <span class="text-muted" style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <select class="form-select" @bind="selectedFirearmId">
+                    <option value="">— Not specified —</option>
+                    @foreach (var f in firearms)
+                    {
+                        <option value="@f.Id">@f.DisplayName</option>
+                    }
+                </select>
+            </div>
+
+            <button class="btn-mr-primary" style="padding:20px;" @onclick="StartRun">
+                <i class="bi bi-play-fill me-2"></i>Start
+            </button>
+        </div>
+    }
+    else if (phase == RunPhase.Countdown)
+    {
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;">
+            <div class="dryfire-pulse-dot"></div>
+            <div style="font-size:1.1rem; font-weight:700; letter-spacing:0.08em; color:var(--mr-text-muted);">STAND BY</div>
+            <button class="btn-mr-secondary" style="max-width:160px;" @onclick="CancelRun">Cancel</button>
+        </div>
+    }
+    else if (phase == RunPhase.Running)
+    {
+        <div style="position:relative; flex:1; overflow:hidden;">
+            @foreach (var t in drill.Targets)
+            {
+                var state = TargetState(t, elapsed);
+                if (state.visible)
+                {
+                    <div style="position:absolute; left:@(state.x)%; top:@(state.y)%; transform:translate(-50%,-50%);
+                                width:@(t.SizePercent)vw; aspect-ratio:1;
+                                border-radius:@(t.Shape == TargetShape.Circle ? "50%" : "6px");
+                                background:@(t.Shape == TargetShape.Silhouette ? "transparent" : "var(--mr-accent)");
+                                display:flex; align-items:center; justify-content:center;">
+                        @if (t.Shape == TargetShape.Silhouette)
+                        {
+                            <i class="bi bi-person-fill" style="font-size:@(t.SizePercent)vw; color:var(--mr-accent);"></i>
+                        }
+                    </div>
+                }
+            }
+
+            <div style="position:absolute; top:12px; left:0; right:0; text-align:center; font-size:2rem; font-weight:800; font-variant-numeric:tabular-nums; color:var(--mr-text-muted);">
+                @elapsed.ToString("0.0")s
+            </div>
+        </div>
+        <div style="padding:16px;">
+            <button class="btn-mr-danger" style="width:100%; padding:16px;" @onclick="() => Finish(manual: true)">
+                <i class="bi bi-stop-fill me-2"></i>Stop
+            </button>
+        </div>
+    }
+    else if (phase == RunPhase.Finished)
+    {
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:24px; gap:16px;">
+            <div style="text-align:center;">
+                <div style="font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--mr-text-muted);">Elapsed</div>
+                <div style="font-size:3.5rem; font-weight:800; color:var(--mr-accent); font-variant-numeric:tabular-nums;">@elapsed.ToString("0.00")s</div>
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">Notes <span class="text-muted" style="font-weight:400; text-transform:none; font-size:0.7rem;">(optional)</span></label>
+                <input class="form-control" @bind="sessionNotes" placeholder="How'd it go?" />
+            </div>
+
+            <button class="btn-mr-primary" @onclick="LogAndExit" disabled="@saving">
+                <i class="bi bi-check-circle me-2"></i>@(saving ? "Saving..." : "Log Rep &amp; Exit")
+            </button>
+            <button class="btn-mr-secondary" @onclick="RunAgain">
+                <i class="bi bi-arrow-repeat me-2"></i>Run Again
+            </button>
+            <button class="btn-mr-secondary" @onclick='() => Nav.NavigateTo("/dryfire")'>
+                Exit Without Logging
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    enum RunPhase { Setup, Countdown, Running, Finished }
+
+    Drill? drill;
+    List<Firearm> firearms = new();
+    bool loading = true;
+    bool saving = false;
+
+    RunPhase phase = RunPhase.Setup;
+    string selectedFirearmId = "";
+    string sessionNotes = "";
+
+    CancellationTokenSource? cts;
+    readonly System.Diagnostics.Stopwatch stopwatch = new();
+    double elapsed;
+    bool endBeepPlayed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        drill = await Svc.GetDrillAsync(Id);
+        firearms = await FirearmSvc.GetFirearmsAsync();
+        loading = false;
+    }
+
+    async Task StartRun()
+    {
+        if (drill == null) return;
+        await JS.InvokeVoidAsync("MakeReadyDryFire.unlock");
+
+        phase = RunPhase.Countdown;
+        StateHasChanged();
+
+        var rnd = new Random();
+        var min = drill.RandomDelayMinSeconds;
+        var max = Math.Max(min, drill.RandomDelayMaxSeconds);
+        var delayMs = (int)(1000 * (min + rnd.NextDouble() * (max - min)));
+
+        cts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(delayMs, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("MakeReadyDryFire.beep", 1600, 180);
+        await JS.InvokeVoidAsync("MakeReadyDryFire.vibrate", 80);
+
+        endBeepPlayed = false;
+        elapsed = 0;
+        stopwatch.Restart();
+        phase = RunPhase.Running;
+        StateHasChanged();
+
+        _ = RunLoop(cts.Token);
+    }
+
+    async Task RunLoop(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && phase == RunPhase.Running && drill != null)
+        {
+            elapsed = stopwatch.Elapsed.TotalSeconds;
+
+            if (drill.ParTimeSeconds is double par && !endBeepPlayed && elapsed >= par)
+            {
+                endBeepPlayed = true;
+                await JS.InvokeVoidAsync("MakeReadyDryFire.beep", 900, 220);
+                await JS.InvokeVoidAsync("MakeReadyDryFire.vibrate", 150);
+            }
+
+            var finishAt = Math.Max(drill.TotalDurationSeconds, drill.ParTimeSeconds ?? 0);
+            if (finishAt > 0 && elapsed >= finishAt)
+            {
+                await Finish(manual: false);
+                break;
+            }
+
+            await InvokeAsync(StateHasChanged);
+
+            try { await Task.Delay(50, token); }
+            catch (TaskCanceledException) { break; }
+        }
+    }
+
+    (double x, double y, bool visible) TargetState(DrillTarget t, double e)
+    {
+        var end = t.AppearAtSeconds + t.DurationSeconds;
+        if (e < t.AppearAtSeconds || e >= end) return (0, 0, false);
+
+        var progress = t.DurationSeconds <= 0 ? 1 : (e - t.AppearAtSeconds) / t.DurationSeconds;
+        double x = t.PositionXPercent, y = t.PositionYPercent;
+
+        switch (t.Movement)
+        {
+            case TargetMovement.LeftToRight: x = progress * 100; break;
+            case TargetMovement.RightToLeft: x = 100 - progress * 100; break;
+            case TargetMovement.TopToBottom: y = progress * 100; break;
+            case TargetMovement.BottomToTop: y = 100 - progress * 100; break;
+        }
+        return (x, y, true);
+    }
+
+    async Task Finish(bool manual)
+    {
+        stopwatch.Stop();
+        elapsed = stopwatch.Elapsed.TotalSeconds;
+        phase = RunPhase.Finished;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    void CancelRun()
+    {
+        cts?.Cancel();
+        phase = RunPhase.Setup;
+    }
+
+    async Task LogAndExit()
+    {
+        if (drill == null) return;
+        saving = true;
+        int? firearmId = int.TryParse(selectedFirearmId, out var fid) ? fid : null;
+
+        await Svc.LogSessionAsync(new DrillSession
+        {
+            DrillId = drill.Id,
+            FirearmId = firearmId,
+            ElapsedSeconds = elapsed,
+            Notes = string.IsNullOrWhiteSpace(sessionNotes) ? null : sessionNotes.Trim()
+        });
+
+        Nav.NavigateTo("/dryfire");
+    }
+
+    void RunAgain()
+    {
+        sessionNotes = "";
+        phase = RunPhase.Setup;
+    }
+
+    public void Dispose() => cts?.Cancel();
+}

@@ -576,6 +576,19 @@ textarea.form-control { resize: none; }
     background: var(--mr-border);
 }
 
+/* ── Dry fire runner ─────────────────────────────────── */
+.dryfire-pulse-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--mr-red);
+    animation: dryfire-pulse 1s ease-in-out infinite;
+}
+@keyframes dryfire-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.5; }
+}
+
 /* ── Validation ──────────────────────────────────────── */
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--mr-green); }
 .invalid { outline: 1px solid var(--mr-red); }

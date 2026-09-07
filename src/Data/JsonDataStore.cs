@@ -25,6 +25,9 @@ class StoreFile
     public List<MaintenancePart> MaintenanceParts { get; set; } = new();
     public List<MaintenanceLog> MaintenanceLogs { get; set; } = new();
     public List<MaintenanceLogPart> MaintenanceLogParts { get; set; } = new();
+    public List<Drill> Drills { get; set; } = new();
+    public List<DrillTarget> DrillTargets { get; set; } = new();
+    public List<DrillSession> DrillSessions { get; set; } = new();
 }
 
 public class JsonDataStore
@@ -62,6 +65,9 @@ public class JsonDataStore
     public List<MaintenancePart> MaintenanceParts => _data.MaintenanceParts;
     public List<MaintenanceLog> MaintenanceLogs => _data.MaintenanceLogs;
     public List<MaintenanceLogPart> MaintenanceLogParts => _data.MaintenanceLogParts;
+    public List<Drill> Drills => _data.Drills;
+    public List<DrillTarget> DrillTargets => _data.DrillTargets;
+    public List<DrillSession> DrillSessions => _data.DrillSessions;
 
     public async Task ReadyAsync() => await _ready;
 
@@ -91,6 +97,7 @@ public class JsonDataStore
                 MaxId(_data.HitFactorSessions), MaxId(_data.HitFactorStages),
                 MaxId(_data.MaintenanceSchedules), MaxId(_data.MaintenanceParts),
                 MaxId(_data.MaintenanceLogs), MaxId(_data.MaintenanceLogParts),
+                MaxId(_data.Drills), MaxId(_data.DrillTargets), MaxId(_data.DrillSessions),
             }.Max() + 1;
         }
         finally
@@ -167,6 +174,24 @@ public class JsonDataStore
 
         foreach (var mod in _data.Modifications)
             mod.Firearm = firearmById.GetValueOrDefault(mod.FirearmId)!;
+
+        foreach (var target in _data.DrillTargets)
+        {
+            var drill = _data.Drills.FirstOrDefault(d => d.Id == target.DrillId);
+            if (drill != null) target.Drill = drill;
+        }
+
+        foreach (var session in _data.DrillSessions)
+        {
+            session.Drill = _data.Drills.First(d => d.Id == session.DrillId);
+            session.Firearm = session.FirearmId.HasValue ? firearmById.GetValueOrDefault(session.FirearmId.Value) : null;
+        }
+
+        foreach (var drill in _data.Drills)
+        {
+            drill.Targets = _data.DrillTargets.Where(t => t.DrillId == drill.Id).OrderBy(t => t.OrderIndex).ToList();
+            drill.Sessions = _data.DrillSessions.Where(s => s.DrillId == drill.Id).ToList();
+        }
 
         foreach (var firearm in _data.Firearms)
         {
