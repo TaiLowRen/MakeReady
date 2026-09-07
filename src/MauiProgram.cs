@@ -27,6 +27,7 @@ public static class MauiProgram
         builder.Services.AddScoped<ExportService>();
         builder.Services.AddScoped<AmmoService>();
         builder.Services.AddSingleton<AlertService>();
+        builder.Services.AddSingleton<NavDrawerState>();
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();

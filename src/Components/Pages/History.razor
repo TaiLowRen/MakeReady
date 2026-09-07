@@ -1,9 +1,13 @@
 @page "/history"
 @inject FirearmService Svc
 @inject NavigationManager Nav
+@inject NavDrawerState Drawer
 @using MakeReady.Models
 
 <div class="app-header">
+    <button class="btn-icon" @onclick="Drawer.Toggle" title="Menu">
+        <i class="bi bi-list"></i>
+    </button>
     <div class="header-title">All Sessions</div>
 </div>
 

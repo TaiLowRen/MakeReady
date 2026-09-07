@@ -1,32 +1,48 @@
-@inject NavigationManager Nav
+@implements IDisposable
+@inject NavDrawerState Drawer
+@using MakeReady.Services
 
-<nav class="bottom-nav">
-    <NavLink class="nav-item" href="" Match="NavLinkMatch.All" ActiveClass="active">
+<div class="nav-drawer-backdrop @(Drawer.IsOpen ? "open" : "")" @onclick="Drawer.Close"></div>
+
+<nav class="nav-drawer @(Drawer.IsOpen ? "open" : "")">
+    <div class="nav-drawer-header">
+        <div class="header-title">MakeReady</div>
+        <button class="btn-icon" @onclick="Drawer.Close" title="Close menu">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+
+    <NavLink class="nav-drawer-item" href="" Match="NavLinkMatch.All" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-collection-fill"></i>
         <span>Firearms</span>
     </NavLink>
-    <NavLink class="nav-item" href="track" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="track" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-crosshair2"></i>
         <span>Track</span>
     </NavLink>
-    <NavLink class="nav-item" href="hitfactor" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="hitfactor" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-trophy-fill"></i>
         <span>Hit Factor</span>
     </NavLink>
-    <NavLink class="nav-item" href="history" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="history" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-clock-history"></i>
         <span>History</span>
     </NavLink>
-    <NavLink class="nav-item" href="maintenance" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="maintenance" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-tools"></i>
         <span>Maintain</span>
     </NavLink>
-    <NavLink class="nav-item" href="export" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="export" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-bar-chart-fill"></i>
         <span>Reports</span>
     </NavLink>
-    <NavLink class="nav-item" href="ammo" ActiveClass="active">
+    <NavLink class="nav-drawer-item" href="ammo" ActiveClass="active" @onclick="Drawer.Close">
         <i class="bi bi-bullseye"></i>
         <span>Ammo</span>
     </NavLink>
 </nav>
+
+@code {
+    protected override void OnInitialized() => Drawer.Changed += StateHasChanged;
+    public void Dispose() => Drawer.Changed -= StateHasChanged;
+}

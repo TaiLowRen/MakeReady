@@ -3,9 +3,13 @@
 @inject FirearmService Svc
 @inject AlertService Alerts
 @inject NavigationManager Nav
+@inject NavDrawerState Drawer
 @using MakeReady.Models
 
 <div class="app-header">
+    <button class="btn-icon" @onclick="Drawer.Toggle" title="Menu">
+        <i class="bi bi-list"></i>
+    </button>
     <div>
         <div class="header-title">MakeReady</div>
         <div class="header-subtitle">Round Count Tracker</div>

@@ -1,9 +1,13 @@
 @page "/hitfactor"
 @inject HitFactorService Svc
 @inject NavigationManager Nav
+@inject NavDrawerState Drawer
 @using MakeReady.Models
 
 <div class="app-header">
+    <button class="btn-icon" @onclick="Drawer.Toggle" title="Menu">
+        <i class="bi bi-list"></i>
+    </button>
     <div>
         <div class="header-title">Hit Factor</div>
         <div class="header-subtitle">USPSA / IPSC Scoring</div>

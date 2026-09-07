@@ -15,6 +15,7 @@ builder.Services.AddScoped<MaintenanceService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddScoped<AmmoService>();
 builder.Services.AddSingleton<AlertService>();
+builder.Services.AddSingleton<NavDrawerState>();
 
 var app = builder.Build();
 

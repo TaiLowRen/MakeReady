@@ -1,11 +1,15 @@
 @page "/export"
 @inject ExportService Svc
 @inject IJSRuntime JS
+@inject NavDrawerState Drawer
 @using MakeReady.Models
 @using MakeReady.Data
 @using System.Text
 
 <div class="app-header">
+    <button class="btn-icon" @onclick="Drawer.Toggle" title="Menu">
+        <i class="bi bi-list"></i>
+    </button>
     <div style="flex:1; min-width:0;">
         <div class="header-title">Reports &amp; Export</div>
         <div class="header-subtitle">Filterable dashboard &middot; CSV &amp; image export</div>

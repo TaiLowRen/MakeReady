@@ -1,10 +1,14 @@
 @page "/ammo"
 @inject AmmoService Svc
 @inject NavigationManager Nav
+@inject NavDrawerState Drawer
 @using MakeReady.Models
 @using MakeReady.Data
 
 <div class="app-header">
+    <button class="btn-icon" @onclick="Drawer.Toggle" title="Menu">
+        <i class="bi bi-list"></i>
+    </button>
     <div>
         <div class="header-title">Ammo Library</div>
         <div class="header-subtitle">Brands, grains &amp; types</div>
